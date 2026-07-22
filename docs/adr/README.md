@@ -16,6 +16,7 @@
 | [0008](./0008-rebalance-threshold.md) | 리밸런싱 기준 5%p, 통계 카드는 기준 초과만 표시 | Accepted |
 | [0009](./0009-controlled-numeric-inputs.md) | 숫자 입력은 문자열 초안 상태로 처리 | Accepted |
 | [0010](./0010-dual-allocation-metrics.md) | 설정 페이지 "목표 배분"/"실제 채워짐" 이중 지표 | Accepted |
+| [0011](./0011-src-directory.md) | 앱 코드를 src/ 디렉토리로 이동 | Accepted |
 
 ## 새 ADR 작성 형식
 

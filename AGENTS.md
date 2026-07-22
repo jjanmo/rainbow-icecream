@@ -11,6 +11,9 @@ Investment portfolio management app. Update this file as new conventions/decisio
 ## Stack (non-negotiable)
 Next.js 16 **Pages Router** (never App Router) · Supabase (Postgres + Auth) · Toss 증권 Open API · shadcn/ui "base-nova" (built on **Base UI**, not Radix — verify via no `radix-ui` deps) + Tailwind · TanStack Query for all server state · TypeScript · pnpm · Recharts.
 
+## File structure
+App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/lib`, `src/types`, `src/styles`, `src/proxy.ts`) — see ADR-0011. `public/`, config files (`next.config.ts`, `tsconfig.json`, `components.json`, etc.), `docs/`, and `supabase/` stay at the repo root per Next.js convention. Path references below (`lib/...`, `hooks/...`) are relative to `src/`.
+
 ## Next.js 16 breaking changes
 - `middleware.ts` → `proxy.ts`, `export function middleware` → `export function proxy`.
 
