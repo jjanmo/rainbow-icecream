@@ -1,0 +1,95 @@
+import { useMemo, useState } from 'react';
+import { HoldingFormDialog } from '@/components/holdings/HoldingFormDialog';
+import { HoldingsTable } from '@/components/holdings/HoldingsTable';
+import { ALL_HOLDINGS_FILTER, HoldingsFilterBar, type HoldingsFilter } from '@/components/holdings/HoldingsFilterBar';
+import { DataErrorNotice } from '@/components/shared/DataErrorNotice';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useAddHolding, useDeleteHolding, useUpdateHolding } from '@/hooks/useHoldings';
+import { useRebalanceData } from '@/hooks/useRebalanceData';
+import type { Holding } from '@/types/domain';
+
+export default function HoldingsPage() {
+  const { data, isLoading, isError, error } = useRebalanceData();
+  const addHolding = useAddHolding();
+  const updateHolding = useUpdateHolding();
+  const deleteHolding = useDeleteHolding();
+
+  const [filter, setFilter] = useState<HoldingsFilter>(ALL_HOLDINGS_FILTER);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
+
+  const filteredHoldings = useMemo(() => {
+    if (!data) return [];
+    return data.holdings.filter(
+      (h) =>
+        (filter.groupId === 'all' || h.groupId === filter.groupId) &&
+        (filter.account === 'all' || h.account === filter.account) &&
+        (filter.region === 'all' || h.region === filter.region),
+    );
+  }, [data, filter]);
+
+  const groupOptions = useMemo(() => data?.groups.map((g) => ({ id: g.id, name: g.name })) ?? [], [data]);
+
+  const accountOptions = useMemo(() => {
+    const values = (data?.holdings ?? []).map((h) => h.account).filter((a): a is string => !!a && a.trim().length > 0);
+    return [...new Set(values)].sort();
+  }, [data]);
+
+  function openAddModal() {
+    setEditingHolding(null);
+    setModalOpen(true);
+  }
+
+  function openEditModal(holding: Holding) {
+    setEditingHolding(holding);
+    setModalOpen(true);
+  }
+
+  return (
+    <div>
+      <div className="mb-3.5 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="mb-1.5 text-xl font-semibold sm:text-2xl">보유 종목</h1>
+          <p className="text-sm text-muted-foreground">보유 중인 종목을 직접 관리하세요.</p>
+        </div>
+        <Button onClick={openAddModal} disabled={groupOptions.length === 0}>
+          + 종목 추가
+        </Button>
+      </div>
+
+      {isError && <DataErrorNotice error={error} />}
+
+      {isLoading || !data ? (
+        <Skeleton className="h-96 w-full rounded-lg" />
+      ) : groupOptions.length === 0 ? (
+        <p className="text-sm text-muted-foreground">먼저 포트폴리오 설정에서 자산군을 추가해주세요.</p>
+      ) : (
+        <>
+          <HoldingsFilterBar
+            filter={filter}
+            onChange={setFilter}
+            groupOptions={groupOptions}
+            accountOptions={accountOptions}
+          />
+          <HoldingsTable rows={filteredHoldings} onEdit={openEditModal} onDelete={(id) => deleteHolding.mutate(id)} />
+        </>
+      )}
+
+      <HoldingFormDialog
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        groupOptions={groupOptions}
+        defaultGroupId={groupOptions[0]?.id ?? null}
+        initialHolding={editingHolding}
+        onSubmit={(holding) => {
+          if (editingHolding) {
+            updateHolding.mutate({ id: editingHolding.id, patch: holding });
+          } else {
+            addHolding.mutate(holding);
+          }
+        }}
+      />
+    </div>
+  );
+}
