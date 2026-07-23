@@ -8,20 +8,20 @@ export function RebalanceTable({ rows }: { rows: HoldingCalc[] }) {
       <Table className="min-w-190">
         <TableHeader>
           <TableRow>
-            <TableHead>종목</TableHead>
+            <TableHead className="pl-4">종목</TableHead>
             <TableHead>자산군</TableHead>
             <TableHead className="text-right">전체목표%</TableHead>
             <TableHead className="text-right">전체실제%</TableHead>
             <TableHead className="text-right">차이</TableHead>
-            <TableHead className="text-right">조치 필요액</TableHead>
+            <TableHead className="pr-4 text-right">조치 필요액</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((h) => (
             <TableRow key={h.id}>
-              <TableCell>
+              <TableCell className="pl-4">
                 <div className="font-semibold">{h.name}</div>
-                <div className="font-mono text-[11px] text-muted-foreground">{h.ticker}</div>
+                <div className="font-mono text-[11px] text-muted-foreground">{h.ticker || " "}</div>
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-1.5">
@@ -34,7 +34,7 @@ export function RebalanceTable({ rows }: { rows: HoldingCalc[] }) {
               <TableCell className="text-right font-mono font-semibold" style={{ color: diffColor(h.diff) }}>
                 {fmtSigned(h.diff)}p
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="pr-4 text-right">
                 <span className="font-semibold" style={{ color: diffColor(h.diff) }}>
                   {actionLabel(h.diff)}
                 </span>{' '}
