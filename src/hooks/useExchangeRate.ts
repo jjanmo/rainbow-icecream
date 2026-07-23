@@ -24,6 +24,7 @@ export function useExchangeRate() {
       return res.json();
     },
     staleTime: 0,
+    refetchOnWindowFocus: false,
     refetchInterval: INTERVAL_MS,
   });
 }

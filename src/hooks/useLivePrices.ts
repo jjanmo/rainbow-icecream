@@ -39,6 +39,7 @@ export function useLivePrices(tickers: string[]) {
     },
     enabled: sortedTickers.length > 0,
     staleTime: 0,
+    refetchOnWindowFocus: false,
     refetchInterval: (query) => {
       const remaining = query.state.data?.rateLimitRemaining;
       if (remaining !== undefined && remaining < LOW_QUOTA_THRESHOLD) return BACKOFF_INTERVAL_MS;
