@@ -23,9 +23,7 @@ export function HoldingsTableRow({
           <div className="size-2.5 shrink-0 rounded-full" style={{ background: holding.color }} />
           <div className="min-w-0">
             <FitText className="font-semibold">{holding.name}</FitText>
-            {holding.ticker && (
-              <FitText className="font-mono text-muted-foreground">{holding.ticker}</FitText>
-            )}
+            <FitText className="font-mono text-muted-foreground">{holding.ticker || " "}</FitText>
           </div>
         </div>
       </TableCell>
