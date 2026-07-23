@@ -18,7 +18,7 @@ export interface Holding {
   name: string;
   targetPctInGroup: number;
   qty: number;
-  /** Always KRW, regardless of region — the price the user paid, in KRW terms. */
+  /** In the holding's native currency: KRW for 국내, USD for 해외 (see `region`). */
   avgPrice: number;
   account: string | null;
   region: Region;

@@ -93,6 +93,7 @@ export function HoldingFormDialog({
 
   const qty = parseFloat(qtyText) || 0;
   const avgPrice = parseFloat(avgPriceText) || 0;
+  const avgPriceUnit = draft.region === "해외" ? "USD" : "KRW";
 
   const canSubmit =
     !!groupId &&
@@ -175,7 +176,7 @@ export function HoldingFormDialog({
             </div>
             <div className="flex flex-1 flex-col gap-1.5">
               <Label>
-                평균매입가 (KRW) <span className="text-destructive">*</span>
+                평균매입가 ({avgPriceUnit}) <span className="text-destructive">*</span>
               </Label>
               <Input
                 type="text"

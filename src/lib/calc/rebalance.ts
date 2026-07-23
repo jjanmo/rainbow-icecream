@@ -14,7 +14,8 @@ export interface HoldingCalc extends Holding {
   groupColor: string;
   indexInGroup: number;
   /** Price in the holding's native currency (KRW domestic, USD overseas). Falls
-   * back to avgPrice (as KRW) when no live price is available. */
+   * back to avgPrice (already in the holding's native currency) when no live
+   * price is available. */
   priceNative: number;
   nativeCurrency: Currency;
   /** priceNative converted to KRW — this is what all aggregate math uses. */
@@ -90,15 +91,17 @@ export function computeRebalance({
   });
 
   // Resolve native/KRW price up front per holding — no live quote (no ticker,
-  // or Toss lookup failed) falls back to avgPrice-as-KRW so math never breaks.
+  // or Toss lookup failed) falls back to avgPrice, already in the holding's
+  // own native currency (KRW for 국내, USD for 해외).
   const resolvedPrices = new Map<
     string,
     { priceNative: number; nativeCurrency: Currency; priceKrw: number; hasLivePrice: boolean }
   >();
   holdingsStable.forEach((h) => {
     const live = h.ticker ? prices[h.ticker] : undefined;
+    const avgPriceCurrency: Currency = h.region === "해외" ? "USD" : "KRW";
     const priceNative = live?.price ?? h.avgPrice;
-    const nativeCurrency: Currency = live?.currency ?? "KRW";
+    const nativeCurrency: Currency = live?.currency ?? avgPriceCurrency;
     const priceKrw = nativeCurrency === "USD" ? priceNative * usdKrwRate : priceNative;
     resolvedPrices.set(h.id, { priceNative, nativeCurrency, priceKrw, hasLivePrice: live !== undefined });
   });
@@ -129,7 +132,10 @@ export function computeRebalance({
     const actualPctInGroup = gValue > 0 ? (value / gValue) * 100 : 0;
     const diff = actualPct - targetPct;
     const actionAmount = (targetPct / 100) * totalValue - value;
-    const returnPct = h.avgPrice > 0 ? ((priceKrw - h.avgPrice) / h.avgPrice) * 100 : 0;
+    // Compared in the holding's own native currency (not priceKrw) so a
+    // 해외 holding's return isn't distorted by FX movement since purchase —
+    // avgPrice and priceNative are always in the same currency (see above).
+    const returnPct = h.avgPrice > 0 ? ((priceNative - h.avgPrice) / h.avgPrice) * 100 : 0;
 
     return {
       ...h,

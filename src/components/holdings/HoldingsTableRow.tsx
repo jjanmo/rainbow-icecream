@@ -41,7 +41,7 @@ export function HoldingsTableRow({
         <FitText className="font-mono">{fmtQty(holding.qty)}</FitText>
       </TableCell>
       <TableCell className="text-right">
-        <FitText className="font-mono">{fmtWon(holding.avgPrice)}</FitText>
+        <FitText className="font-mono">{isOverseas ? fmtUsd(holding.avgPrice) : fmtWon(holding.avgPrice)}</FitText>
       </TableCell>
       <TableCell className="text-right">
         <FitText className={`font-mono ${holding.hasLivePrice ? "" : "text-muted-foreground"}`}>
