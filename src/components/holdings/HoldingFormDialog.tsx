@@ -162,33 +162,6 @@ export function HoldingFormDialog({
           </p>
 
           <div className="flex gap-2.5">
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label>
-                보유수량 <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={qtyText}
-                onChange={(e) => setQtyText(e.target.value)}
-                className="font-mono"
-              />
-            </div>
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label>
-                평균매입가 ({avgPriceUnit}) <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={avgPriceText}
-                onChange={(e) => setAvgPriceText(e.target.value)}
-                className="font-mono"
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-2.5">
             <div className="flex w-24 flex-col gap-1.5">
               <Label>
                 구분 <span className="text-destructive">*</span>
@@ -227,6 +200,33 @@ export function HoldingFormDialog({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="flex gap-2.5">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label>
+                보유수량 <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={qtyText}
+                onChange={(e) => setQtyText(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label>
+                평균매입가 ({avgPriceUnit}) <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={avgPriceText}
+                onChange={(e) => setAvgPriceText(e.target.value)}
+                className="font-mono"
+              />
             </div>
           </div>
 
