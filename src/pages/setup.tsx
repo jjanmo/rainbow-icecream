@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { AllocationBar } from "@/components/setup/AllocationBar";
 import { EditGroupCard } from "@/components/setup/EditGroupCard";
 import { GroupCard } from "@/components/setup/GroupCard";
+import { HoldingFormDialog } from "@/components/holdings/HoldingFormDialog";
 import { DataErrorNotice } from "@/components/shared/DataErrorNotice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,16 +12,17 @@ import { useAddGroup, useDeleteGroup, useUpdateGroup } from "@/hooks/useGroups";
 import { useAddHolding, useDeleteHolding, useUpdateHolding } from "@/hooks/useHoldings";
 import { useRebalanceData } from "@/hooks/useRebalanceData";
 import { FLAVOR_HEXES } from "@/lib/calc/color";
-import { fmtPct } from "@/lib/format";
+import { fmtPct, fmtWon } from "@/lib/format";
 import {
   commitSetupDraft,
+  draftHoldingFromForm,
   newDraftGroup,
-  newDraftHolding,
   toDraftGroup,
   toDraftHolding,
   type DraftGroup,
   type DraftHolding,
 } from "@/lib/setupDraft";
+import type { NewHolding } from "@/types/domain";
 
 export default function SetupPage() {
   const { data, isLoading, isError, error } = useRebalanceData();
@@ -35,12 +37,9 @@ export default function SetupPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [draftGroups, setDraftGroups] = useState<DraftGroup[]>([]);
   const [draftHoldings, setDraftHoldings] = useState<DraftHolding[]>([]);
+  const [addingToGroupKey, setAddingToGroupKey] = useState<string | null>(null);
 
   const targetSumOk = data ? Math.abs(data.targetSum - 100) < 0.5 : true;
-  const filledSum = data
-    ? data.groups.reduce((sum, g) => sum + (g.targetPct * g.memberTargetSum) / 100, 0)
-    : 0;
-  const filledSumOk = data ? Math.abs(filledSum - 100) < 0.5 : true;
 
   function startEditing() {
     if (!data) return;
@@ -108,8 +107,9 @@ export default function SetupPage() {
     setDraftHoldings((holdings) => holdings.filter((h) => h.clientKey !== clientKey));
   }
 
-  function addDraftHolding(groupClientKey: string) {
-    setDraftHoldings((holdings) => [...holdings, newDraftHolding(groupClientKey)]);
+  function addDraftHoldingFromForm(holding: NewHolding) {
+    setDraftHoldings((holdings) => [...holdings, draftHoldingFromForm(holding)]);
+    setAddingToGroupKey(null);
   }
 
   return (
@@ -155,7 +155,7 @@ export default function SetupPage() {
               holdings={draftHoldings.filter((h) => h.groupClientKey === group.clientKey)}
               onUpdate={(patch) => updateDraftGroup(group.clientKey, patch)}
               onDelete={() => deleteDraftGroup(group.clientKey)}
-              onAddHolding={() => addDraftHolding(group.clientKey)}
+              onAddHolding={() => setAddingToGroupKey(group.clientKey)}
               onUpdateHolding={updateDraftHolding}
               onDeleteHolding={deleteDraftHolding}
             />
@@ -169,6 +169,14 @@ export default function SetupPage() {
           >
             + 자산군 추가
           </Button>
+
+          <HoldingFormDialog
+            open={addingToGroupKey !== null}
+            onOpenChange={(open) => !open && setAddingToGroupKey(null)}
+            groupOptions={draftGroups.map((g) => ({ id: g.clientKey, name: g.name }))}
+            defaultGroupId={addingToGroupKey}
+            onSubmit={addDraftHoldingFromForm}
+          />
         </>
       ) : (
         <>
@@ -186,19 +194,14 @@ export default function SetupPage() {
             <AllocationBar groups={data.groups} widthOf={(g) => g.targetPct} />
 
             <div className="mb-1.5 mt-4 flex items-center gap-2">
-              <span className="text-[12.5px] text-muted-foreground">실제 채워짐 (종목까지)</span>
-              {filledSumOk ? (
-                <Badge className="bg-accent text-accent-foreground">정상</Badge>
+              <span className="text-[12.5px] text-muted-foreground">실제 보유 비중</span>
+              {data.totalValue > 0 ? (
+                <Badge className="bg-accent text-accent-foreground">총 {fmtWon(data.totalValue)}</Badge>
               ) : (
-                <Badge variant="destructive">
-                  100%까지 {fmtPct(Math.abs(100 - filledSum), 0)} 남음 ({fmtPct(filledSum, 0)})
-                </Badge>
+                <Badge variant="destructive">보유 데이터 없음</Badge>
               )}
             </div>
-            <AllocationBar
-              groups={data.groups}
-              widthOf={(g) => (g.targetPct * g.memberTargetSum) / 100}
-            />
+            <AllocationBar groups={data.groups} widthOf={(g) => g.actualPct} />
           </div>
 
           {data.groups.map((group) => (

@@ -54,19 +54,24 @@ export function newDraftGroup(flavorIndex: number): DraftGroup {
   return { clientKey: crypto.randomUUID(), id: null, name: "새 자산군", targetPct: 0, flavorIndex };
 }
 
-export function newDraftHolding(groupClientKey: string): DraftHolding {
+/**
+ * Builds a DraftHolding from a HoldingFormDialog submission — `holding.groupId`
+ * is actually the target DraftGroup's clientKey (see the setup page's use of
+ * HoldingFormDialog, which is fed draft groups' clientKeys as its group options).
+ */
+export function draftHoldingFromForm(holding: NewHolding): DraftHolding {
   return {
     clientKey: crypto.randomUUID(),
     id: null,
-    groupClientKey,
-    ticker: "",
-    name: "새 종목",
-    targetPctInGroup: 0,
-    qty: 0,
-    avgPrice: 0,
-    account: "일반계좌",
-    region: "국내",
-    memo: "",
+    groupClientKey: holding.groupId,
+    ticker: holding.ticker,
+    name: holding.name,
+    targetPctInGroup: holding.targetPctInGroup,
+    qty: holding.qty,
+    avgPrice: holding.avgPrice,
+    account: holding.account,
+    region: holding.region,
+    memo: holding.memo,
   };
 }
 

@@ -18,6 +18,7 @@
 | [0010](./0010-dual-allocation-metrics.md) | 설정 페이지 "목표 배분"/"실제 채워짐" 이중 지표 | Accepted |
 | [0011](./0011-src-directory.md) | 앱 코드를 src/ 디렉토리로 이동 | Accepted |
 | [0012](./0012-avg-price-native-currency.md) | 평균매입가는 종목의 원래 통화(국내=KRW, 해외=USD)로 입력 | Accepted |
+| [0013](./0013-setup-actual-weight-and-full-holding-add.md) | 설정 페이지 "실제 보유 비중"으로 교체 + 종목 추가 시 전체 항목 입력 | Accepted |
 
 ## 새 ADR 작성 형식
 
