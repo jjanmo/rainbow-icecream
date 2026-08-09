@@ -19,6 +19,11 @@
 | [0011](./0011-src-directory.md) | 앱 코드를 src/ 디렉토리로 이동 | Accepted |
 | [0012](./0012-avg-price-native-currency.md) | 평균매입가는 종목의 원래 통화(국내=KRW, 해외=USD)로 입력 | Accepted |
 | [0013](./0013-setup-actual-weight-and-full-holding-add.md) | 설정 페이지 "실제 보유 비중"으로 교체 + 종목 추가 시 전체 항목 입력 | Accepted |
+| [0014](./0014-setup-full-holding-edit.md) | 설정 페이지에서 종목 수정도 전체 항목 편집 가능하도록 확장 | Superseded by ADR-0015 |
+| [0015](./0015-setup-accordion-and-dnd-reorder.md) | 설정 페이지 종목 수정을 아코디언으로, dnd-kit으로 순서 변경 | Accepted |
+| [0016](./0016-block-completion-over-100-target.md) | 자산군 목표 비중 합계 100% 초과 시 완료 차단 | Accepted |
+| [0017](./0017-group-cards-collapse-by-default.md) | 자산군 카드 기본 접힘, 클릭해야 종목 목록 노출 | Accepted |
+| [0018](./0018-remove-in-group-weight-from-setup-ui.md) | 설정 페이지 UI에서 그룹 내 비중 편집/표시 제거 | Accepted |
 
 ## 새 ADR 작성 형식
 

@@ -9,7 +9,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 Investment portfolio management app. Update this file as new conventions/decisions come up during work — don't wait to be asked.
 
 ## Stack (non-negotiable)
-Next.js 16 **Pages Router** (never App Router) · Supabase (Postgres + Auth) · Toss 증권 Open API · shadcn/ui "base-nova" (built on **Base UI**, not Radix — verify via no `radix-ui` deps) + Tailwind · TanStack Query for all server state · TypeScript · pnpm · Recharts.
+Next.js 16 **Pages Router** (never App Router) · Supabase (Postgres + Auth) · Toss 증권 Open API · shadcn/ui "base-nova" (built on **Base UI**, not Radix — verify via no `radix-ui` deps) + Tailwind · TanStack Query for all server state · TypeScript · pnpm · Recharts · dnd-kit (drag-and-drop reordering, `/setup` only).
 
 ## File structure
 App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/lib`, `src/types`, `src/styles`, `src/proxy.ts`) — see ADR-0011. `public/`, config files (`next.config.ts`, `tsconfig.json`, `components.json`, etc.), `docs/`, and `supabase/` stay at the repo root per Next.js convention. Path references below (`lib/...`, `hooks/...`) are relative to `src/`.
@@ -19,8 +19,9 @@ App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/li
 
 ## Data model rules
 - Never persist `current_price` / any live-market-derived value in the DB — always fetched live from Toss at read time and computed in `lib/calc/rebalance.ts`. See the comment in `supabase/schema.sql`.
-- A holding with `ticker: null` (e.g. cash-like assets) is intentional — it means "skip live price lookup, use `avgPrice` as the value." Never treat this as missing data to backfill.
+- A holding with `ticker: null` (e.g. cash-like assets) still means "skip live price lookup, use `avgPrice` as the value" in `lib/calc/rebalance.ts` — that read/calc-side behavior is untouched. **But** `HoldingFormDialog` now requires a non-empty 티커/코드 on every add/edit (so domestic tickers can always be looked up), so this state can no longer be created or preserved through the UI — only pre-existing rows have it, and editing one now forces you to add a ticker. Cash-like holdings have no supported entry path right now; don't "fix" the modal back to optional without checking with the user first, since that was a deliberate, explicit instruction.
 - `REBALANCE_THRESHOLD` (`lib/calc/rebalance.ts`) = 5 percentage points — the app-wide "close enough to on-target" cutoff for diff/actionLabel/rebalance-needed logic.
+- `holdings.sort_order` drives display order within a group (`/setup`'s drag-and-drop, ADR-0015) — keep `lib/api/holdings.ts`'s `order()` clause and `lib/calc/rebalance.ts`'s `byOrderThenCreatedThenId` in sync if either changes, or displayed order and persisted order will drift apart.
 
 ## Setup page edit pattern (draft/staging, not autosave)
 `/setup`'s edit mode is a true local draft: entering edit mode copies server state into `DraftGroup[]`/`DraftHolding[]` (`lib/setupDraft.ts`), and **nothing** touches Supabase until "완료" is clicked (`commitSetupDraft`, which diffs draft vs. original and replays only the changes). "취소" discards the draft with zero server calls — this must cover additions/deletions of groups and holdings too, not just field edits. Don't reintroduce onBlur-autosave on this page.
