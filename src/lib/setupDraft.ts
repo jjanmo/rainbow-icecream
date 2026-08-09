@@ -28,6 +28,7 @@ export interface DraftHolding {
   account: string | null;
   region: Region;
   memo: string | null;
+  sortOrder: number;
 }
 
 export function toDraftGroup(g: AssetGroup): DraftGroup {
@@ -47,6 +48,7 @@ export function toDraftHolding(h: Holding): DraftHolding {
     account: h.account,
     region: h.region,
     memo: h.memo,
+    sortOrder: h.sortOrder,
   };
 }
 
@@ -72,7 +74,24 @@ export function draftHoldingFromForm(holding: NewHolding): DraftHolding {
     account: holding.account,
     region: holding.region,
     memo: holding.memo,
+    sortOrder: holding.sortOrder,
   };
+}
+
+/**
+ * Reassigns sortOrder (0, 1, 2, ...) for one group's holdings after a
+ * drag-and-drop reorder — `orderedClientKeys` is that group's holdings in
+ * their new order. Holdings in other groups are returned unchanged.
+ */
+export function reorderDraftHoldings(
+  holdings: DraftHolding[],
+  orderedClientKeys: string[],
+): DraftHolding[] {
+  const orderByClientKey = new Map(orderedClientKeys.map((key, index) => [key, index]));
+  return holdings.map((h) => {
+    const sortOrder = orderByClientKey.get(h.clientKey);
+    return sortOrder === undefined ? h : { ...h, sortOrder };
+  });
 }
 
 export interface SetupDraftMutations {
@@ -165,6 +184,7 @@ export async function commitSetupDraft({
       account: h.account,
       region: h.region,
       memo: h.memo,
+      sortOrder: h.sortOrder,
     });
   }
 
@@ -185,6 +205,7 @@ export async function commitSetupDraft({
     if (original.account !== h.account) patch.account = h.account;
     if (original.region !== h.region) patch.region = h.region;
     if (original.memo !== h.memo) patch.memo = h.memo;
+    if (original.sortOrder !== h.sortOrder) patch.sortOrder = h.sortOrder;
     if (Object.keys(patch).length > 0) {
       await mutations.updateHolding({ id: h.id, patch });
     }

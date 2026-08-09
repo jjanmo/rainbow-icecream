@@ -73,6 +73,13 @@ function byCreatedThenId<T extends { createdAt: string; id: string }>(a: T, b: T
   return a.id.localeCompare(b.id);
 }
 
+/** Manual order (drag-and-drop on /setup) first, falling back to creation
+ * order for holdings that haven't been manually reordered yet. */
+function byOrderThenCreatedThenId<T extends { sortOrder: number; createdAt: string; id: string }>(a: T, b: T) {
+  if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+  return byCreatedThenId(a, b);
+}
+
 export function computeRebalance({
   groups,
   holdings,
@@ -82,7 +89,7 @@ export function computeRebalance({
   const sortedGroups = [...groups].sort(byCreatedThenId);
   const groupById = new Map(sortedGroups.map((g) => [g.id, g]));
 
-  const holdingsStable = [...holdings].sort(byCreatedThenId);
+  const holdingsStable = [...holdings].sort(byOrderThenCreatedThenId);
   const groupMemberIds = new Map<string, string[]>();
   holdingsStable.forEach((h) => {
     const arr = groupMemberIds.get(h.groupId) ?? [];

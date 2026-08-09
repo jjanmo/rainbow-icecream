@@ -23,6 +23,8 @@ export interface Holding {
   account: string | null;
   region: Region;
   memo: string | null;
+  /** Manual display order within its group (lower = earlier), set via drag-and-drop on /setup. */
+  sortOrder: number;
   createdAt: string;
 }
 

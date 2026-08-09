@@ -13,11 +13,12 @@ interface HoldingRow {
   account: string | null;
   region: Region;
   memo: string | null;
+  sort_order: number;
   created_at: string;
 }
 
 const COLUMNS =
-  "id, user_id, group_id, ticker, name, target_pct_in_group, qty, avg_price, account, region, memo, created_at";
+  "id, user_id, group_id, ticker, name, target_pct_in_group, qty, avg_price, account, region, memo, sort_order, created_at";
 
 function toDomain(row: HoldingRow): Holding {
   return {
@@ -32,6 +33,7 @@ function toDomain(row: HoldingRow): Holding {
     account: row.account,
     region: row.region,
     memo: row.memo,
+    sortOrder: row.sort_order,
     createdAt: row.created_at,
   };
 }
@@ -40,6 +42,7 @@ export async function fetchHoldings(supabase: SupabaseClient): Promise<Holding[]
   const { data, error } = await supabase
     .from("holdings")
     .select(COLUMNS)
+    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) throw error;
   return (data as HoldingRow[]).map(toDomain);
@@ -61,6 +64,7 @@ export async function insertHolding(
       account: holding.account,
       region: holding.region,
       memo: holding.memo,
+      sort_order: holding.sortOrder,
     })
     .select(COLUMNS)
     .single();
@@ -83,6 +87,7 @@ export async function updateHolding(
   if (patch.account !== undefined) update.account = patch.account;
   if (patch.region !== undefined) update.region = patch.region;
   if (patch.memo !== undefined) update.memo = patch.memo;
+  if (patch.sortOrder !== undefined) update.sort_order = patch.sortOrder;
 
   const { error } = await supabase.from("holdings").update(update).eq("id", id);
   if (error) throw error;
