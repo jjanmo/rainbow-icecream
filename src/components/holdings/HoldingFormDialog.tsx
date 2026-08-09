@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { Holding, NewHolding, Region } from "@/types/domain";
+import type { NewHolding, Region } from "@/types/domain";
 
 // qty/avgPrice are edited as free-form text (not `type="number"`) and only
 // parsed to numbers on submit — a controlled number input whose value starts
@@ -26,6 +26,7 @@ const EMPTY_DRAFT: Draft = {
   account: "일반계좌",
   region: "국내",
   memo: "",
+  sortOrder: 0,
 };
 
 const REGION_ITEMS = [
@@ -45,7 +46,7 @@ const ACCOUNT_TYPES = [
 ];
 const ACCOUNT_ITEMS = ACCOUNT_TYPES.map((v) => ({ label: v, value: v }));
 
-function toDraft(holding: Holding): Draft {
+function toDraft(holding: NewHolding): Draft {
   return {
     ticker: holding.ticker ?? "",
     name: holding.name,
@@ -53,6 +54,7 @@ function toDraft(holding: Holding): Draft {
     account: holding.account ?? "",
     region: holding.region,
     memo: holding.memo ?? "",
+    sortOrder: holding.sortOrder,
   };
 }
 
@@ -69,7 +71,7 @@ export function HoldingFormDialog({
   groupOptions: { id: string; name: string }[];
   defaultGroupId: string | null;
   /** When set, the dialog edits this holding instead of creating a new one. */
-  initialHolding?: Holding | null;
+  initialHolding?: NewHolding | null;
   onSubmit: (holding: NewHolding) => void;
 }) {
   const isEdit = !!initialHolding;
@@ -94,9 +96,11 @@ export function HoldingFormDialog({
   const qty = parseFloat(qtyText) || 0;
   const avgPrice = parseFloat(avgPriceText) || 0;
   const avgPriceUnit = draft.region === "해외" ? "USD" : "KRW";
+  const tickerLabel = draft.region === "국내" ? "코드" : "티커";
 
   const canSubmit =
     !!groupId &&
+    (draft.ticker ?? "").trim().length > 0 &&
     draft.name.trim().length > 0 &&
     qty > 0 &&
     avgPrice > 0 &&
@@ -137,31 +141,6 @@ export function HoldingFormDialog({
           </div>
 
           <div className="flex gap-2.5">
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label>티커</Label>
-              <Input
-                value={draft.ticker ?? ""}
-                onChange={(e) => setDraft((d) => ({ ...d, ticker: e.target.value }))}
-                className="font-mono"
-              />
-            </div>
-            <div className="flex flex-2 flex-col gap-1.5">
-              <Label>
-                종목명 <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={draft.name}
-                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-              />
-            </div>
-          </div>
-
-          <p className="text-[11.5px] text-muted-foreground">
-            티커를 비워두면 시세 조회를 하지 않고 평균매입가를
-            현재가로 사용합니다 — CMA·예금 등 실제로 거래되지 않는 자산에 활용하세요.
-          </p>
-
-          <div className="flex gap-2.5">
             <div className="flex w-24 flex-col gap-1.5">
               <Label>
                 구분 <span className="text-destructive">*</span>
@@ -200,6 +179,28 @@ export function HoldingFormDialog({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="flex gap-2.5">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label>
+                {tickerLabel} <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                value={draft.ticker ?? ""}
+                onChange={(e) => setDraft((d) => ({ ...d, ticker: e.target.value }))}
+                className="font-mono"
+              />
+            </div>
+            <div className="flex flex-2 flex-col gap-1.5">
+              <Label>
+                종목명 <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                value={draft.name}
+                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+              />
             </div>
           </div>
 
