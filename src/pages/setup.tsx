@@ -17,6 +17,7 @@ import {
   commitSetupDraft,
   draftHoldingFromForm,
   newDraftGroup,
+  reorderDraftHoldings,
   toDraftGroup,
   toDraftHolding,
   type DraftGroup,
@@ -40,6 +41,8 @@ export default function SetupPage() {
   const [addingToGroupKey, setAddingToGroupKey] = useState<string | null>(null);
 
   const targetSumOk = data ? Math.abs(data.targetSum - 100) < 0.5 : true;
+  const draftTargetSum = draftGroups.reduce((sum, g) => sum + g.targetPct, 0);
+  const draftTargetSumOverLimit = draftTargetSum > 100;
 
   function startEditing() {
     if (!data) return;
@@ -96,10 +99,7 @@ export default function SetupPage() {
     setDraftGroups((groups) => [...groups, newDraftGroup(groups.length % FLAVOR_HEXES.length)]);
   }
 
-  function updateDraftHolding(
-    clientKey: string,
-    patch: Partial<Pick<DraftHolding, "ticker" | "name" | "targetPctInGroup">>,
-  ) {
+  function updateDraftHolding(clientKey: string, patch: Partial<DraftHolding>) {
     setDraftHoldings((holdings) => holdings.map((h) => (h.clientKey === clientKey ? { ...h, ...patch } : h)));
   }
 
@@ -107,8 +107,16 @@ export default function SetupPage() {
     setDraftHoldings((holdings) => holdings.filter((h) => h.clientKey !== clientKey));
   }
 
-  function addDraftHoldingFromForm(holding: NewHolding) {
-    setDraftHoldings((holdings) => [...holdings, draftHoldingFromForm(holding)]);
+  function reorderHoldings(groupClientKey: string, orderedClientKeys: string[]) {
+    setDraftHoldings((holdings) => reorderDraftHoldings(holdings, orderedClientKeys));
+  }
+
+  function submitHoldingForm(holding: NewHolding) {
+    const groupHoldingCount = draftHoldings.filter((h) => h.groupClientKey === holding.groupId).length;
+    setDraftHoldings((holdings) => [
+      ...holdings,
+      draftHoldingFromForm({ ...holding, sortOrder: groupHoldingCount }),
+    ]);
     setAddingToGroupKey(null);
   }
 
@@ -123,13 +131,25 @@ export default function SetupPage() {
         </div>
         {data &&
           (isEditing ? (
-            <div className="flex shrink-0 gap-2">
-              <Button type="button" variant="outline" onClick={cancelEditing} disabled={isSaving}>
-                취소
-              </Button>
-              <Button type="button" onClick={finishEditing} disabled={isSaving}>
-                {isSaving ? "저장 중..." : "완료"}
-              </Button>
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={cancelEditing} disabled={isSaving}>
+                  취소
+                </Button>
+                <Button
+                  type="button"
+                  onClick={finishEditing}
+                  disabled={isSaving || draftTargetSumOverLimit}
+                  title={draftTargetSumOverLimit ? "자산군 목표 비중 합계가 100%를 넘으면 완료할 수 없습니다" : undefined}
+                >
+                  {isSaving ? "저장 중..." : "완료"}
+                </Button>
+              </div>
+              {draftTargetSumOverLimit && (
+                <span className="text-[11px] text-destructive">
+                  자산군 목표 비중 합계가 {fmtPct(draftTargetSum, 0)}로 100%를 초과했습니다
+                </span>
+              )}
             </div>
           ) : (
             <Button type="button" variant="outline" onClick={startEditing}>
@@ -152,11 +172,15 @@ export default function SetupPage() {
             <EditGroupCard
               key={group.clientKey}
               group={group}
-              holdings={draftHoldings.filter((h) => h.groupClientKey === group.clientKey)}
+              holdings={draftHoldings
+                .filter((h) => h.groupClientKey === group.clientKey)
+                .sort((a, b) => a.sortOrder - b.sortOrder)}
+              groupOptions={draftGroups.map((g) => ({ id: g.clientKey, name: g.name }))}
               onUpdate={(patch) => updateDraftGroup(group.clientKey, patch)}
               onDelete={() => deleteDraftGroup(group.clientKey)}
               onAddHolding={() => setAddingToGroupKey(group.clientKey)}
               onUpdateHolding={updateDraftHolding}
+              onReorderHoldings={reorderHoldings}
               onDeleteHolding={deleteDraftHolding}
             />
           ))}
@@ -175,7 +199,7 @@ export default function SetupPage() {
             onOpenChange={(open) => !open && setAddingToGroupKey(null)}
             groupOptions={draftGroups.map((g) => ({ id: g.clientKey, name: g.name }))}
             defaultGroupId={addingToGroupKey}
-            onSubmit={addDraftHoldingFromForm}
+            onSubmit={submitHoldingForm}
           />
         </>
       ) : (
@@ -187,7 +211,9 @@ export default function SetupPage() {
                 <Badge className="bg-accent text-accent-foreground">정상</Badge>
               ) : (
                 <Badge variant="destructive">
-                  100%까지 {fmtPct(Math.abs(data.targetSum - 100), 0)} 남음 ({fmtPct(data.targetSum, 0)})
+                  {data.targetSum > 100
+                    ? `100%보다 ${fmtPct(data.targetSum - 100, 0)} 초과 (${fmtPct(data.targetSum, 0)})`
+                    : `100%까지 ${fmtPct(100 - data.targetSum, 0)} 남음 (${fmtPct(data.targetSum, 0)})`}
                 </Badge>
               )}
             </div>
