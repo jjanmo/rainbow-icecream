@@ -6,11 +6,11 @@ interface GroupRow {
   user_id: string;
   name: string;
   target_pct: number;
-  flavor_index: number;
+  sort_order: number;
   created_at: string;
 }
 
-const COLUMNS = "id, user_id, name, target_pct, flavor_index, created_at";
+const COLUMNS = "id, user_id, name, target_pct, sort_order, created_at";
 
 function toDomain(row: GroupRow): AssetGroup {
   return {
@@ -18,7 +18,7 @@ function toDomain(row: GroupRow): AssetGroup {
     userId: row.user_id,
     name: row.name,
     targetPct: Number(row.target_pct),
-    flavorIndex: row.flavor_index,
+    sortOrder: row.sort_order,
     createdAt: row.created_at,
   };
 }
@@ -27,6 +27,7 @@ export async function fetchGroups(supabase: SupabaseClient): Promise<AssetGroup[
   const { data, error } = await supabase
     .from("asset_groups")
     .select(COLUMNS)
+    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) throw error;
   return (data as GroupRow[]).map(toDomain);
@@ -41,7 +42,7 @@ export async function insertGroup(
     .insert({
       name: group.name,
       target_pct: group.targetPct,
-      flavor_index: group.flavorIndex,
+      sort_order: group.sortOrder,
     })
     .select(COLUMNS)
     .single();
@@ -57,7 +58,7 @@ export async function updateGroup(
   const update: Record<string, unknown> = {};
   if (patch.name !== undefined) update.name = patch.name;
   if (patch.targetPct !== undefined) update.target_pct = patch.targetPct;
-  if (patch.flavorIndex !== undefined) update.flavor_index = patch.flavorIndex;
+  if (patch.sortOrder !== undefined) update.sort_order = patch.sortOrder;
 
   const { error } = await supabase.from("asset_groups").update(update).eq("id", id);
   if (error) throw error;

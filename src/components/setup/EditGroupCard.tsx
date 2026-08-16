@@ -1,17 +1,33 @@
-import { useState } from "react";
-import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { ChevronDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useEditableField, useEditableNumberField } from "@/hooks/useEditableField";
-import { hueForFlavorIndex, groupColor, tintForIndex } from "@/lib/calc/color";
-import type { DraftGroup, DraftHolding } from "@/lib/setupDraft";
-import { EditHoldingInlineRow } from "./EditHoldingInlineRow";
-import { SwatchPicker } from "./SwatchPicker";
+import { useState } from 'react';
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { ChevronDown, GripVertical } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { useEditableField, useEditableNumberField } from '@/hooks/useEditableField';
+import { tintForIndex } from '@/lib/calc/color';
+import type { DraftGroup, DraftHolding } from '@/lib/setupDraft';
+import { EditHoldingInlineRow } from './EditHoldingInlineRow';
 
 export function EditGroupCard({
   group,
+  color,
+  hue,
   holdings,
   groupOptions,
   onUpdate,
@@ -22,10 +38,14 @@ export function EditGroupCard({
   onDeleteHolding,
 }: {
   group: DraftGroup;
+  /** This group's derived color/hue — computed by the parent from its position
+   * among all groups (lib/calc/color.ts hueForGroupIndex), not user-settable. */
+  color: string;
+  hue: number;
   /** This group's holdings, already sorted by sortOrder. */
   holdings: DraftHolding[];
   groupOptions: { id: string; name: string }[];
-  onUpdate: (patch: Partial<Pick<DraftGroup, "name" | "targetPct" | "flavorIndex">>) => void;
+  onUpdate: (patch: Partial<Pick<DraftGroup, 'name' | 'targetPct'>>) => void;
   onDelete: () => void;
   onAddHolding: () => void;
   onUpdateHolding: (clientKey: string, patch: Partial<DraftHolding>) => void;
@@ -36,7 +56,14 @@ export function EditGroupCard({
   const name = useEditableField(group.name, (v) => onUpdate({ name: v }));
   const targetPct = useEditableNumberField(group.targetPct, (v) => onUpdate({ targetPct: v }));
 
-  const hue = hueForFlavorIndex(group.flavorIndex);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: group.clientKey,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -54,9 +81,17 @@ export function EditGroupCard({
   }
 
   return (
-    <div className="mb-4 rounded-lg border border-border bg-card p-5 sm:p-6">
-      <div className="mb-2.5 flex flex-wrap items-center gap-2.5">
-        <div className="size-3.5 shrink-0 rounded-full" style={{ background: groupColor(group.flavorIndex) }} />
+    <div ref={setNodeRef} style={style} className="mb-4 rounded-lg border border-border bg-card p-5 sm:p-6">
+      <div className={`flex flex-wrap items-center gap-2.5 ${expanded ? 'mb-2.5' : ''}`}>
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="shrink-0 cursor-grab touch-none text-muted-foreground active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" />
+        </button>
+        <div className="size-3.5 shrink-0 rounded-full" style={{ background: color }} />
         <Input
           value={name.value}
           onChange={(e) => name.onChange(e.target.value)}
@@ -92,11 +127,9 @@ export function EditGroupCard({
           onClick={() => setExpanded((e) => !e)}
           className="shrink-0 text-muted-foreground"
         >
-          <ChevronDown className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+          <ChevronDown className={`size-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
         </Button>
       </div>
-
-      <SwatchPicker flavorIndex={group.flavorIndex} onSelect={(flavorIndex) => onUpdate({ flavorIndex })} />
 
       {expanded && (
         <>

@@ -1,5 +1,5 @@
 import type { AssetGroup, Currency, Holding, LivePriceMap } from "@/types/domain";
-import { colorFor, FLAVOR_HEXES, hueForFlavorIndex, tintForIndex } from "./color";
+import { colorFor, FLAVOR_HEXES, hueForGroupIndex, tintForIndex } from "./color";
 
 /** Diff (percentage points) below which a holding/group is considered "on target". */
 export const REBALANCE_THRESHOLD = 5;
@@ -86,8 +86,9 @@ export function computeRebalance({
   prices,
   usdKrwRate,
 }: ComputeRebalanceInput): RebalanceResult {
-  const sortedGroups = [...groups].sort(byCreatedThenId);
+  const sortedGroups = [...groups].sort(byOrderThenCreatedThenId);
   const groupById = new Map(sortedGroups.map((g) => [g.id, g]));
+  const groupIndexById = new Map(sortedGroups.map((g, i) => [g.id, i]));
 
   const holdingsStable = [...holdings].sort(byOrderThenCreatedThenId);
   const groupMemberIds = new Map<string, string[]>();
@@ -126,7 +127,8 @@ export function computeRebalance({
 
   const holdingsCalc: HoldingCalc[] = holdingsStable.map((h) => {
     const group = groupById.get(h.groupId);
-    const hue = hueForFlavorIndex(group?.flavorIndex ?? 0);
+    const groupIndex = groupIndexById.get(h.groupId) ?? 0;
+    const hue = hueForGroupIndex(groupIndex, sortedGroups.length);
     const memberIds = groupMemberIds.get(h.groupId) ?? [h.id];
     const indexInGroup = memberIds.indexOf(h.id);
     const { priceNative, nativeCurrency, priceKrw, hasLivePrice } = resolvedPrices.get(h.id)!;
@@ -172,9 +174,9 @@ export function computeRebalance({
     holdingsByGroup.set(h.groupId, arr);
   });
 
-  const groupsCalc: GroupCalc[] = sortedGroups.map((g) => {
+  const groupsCalc: GroupCalc[] = sortedGroups.map((g, index) => {
     const members = holdingsByGroup.get(g.id) ?? [];
-    const hue = hueForFlavorIndex(g.flavorIndex);
+    const hue = hueForGroupIndex(index, sortedGroups.length);
     const actualPct = members.reduce((sum, h) => sum + h.actualPct, 0);
     const value = members.reduce((sum, h) => sum + h.value, 0);
     const memberTargetSum = members.reduce((sum, h) => sum + h.targetPctInGroup, 0);

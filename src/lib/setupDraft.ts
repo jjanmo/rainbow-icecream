@@ -11,7 +11,9 @@ export interface DraftGroup {
   id: string | null;
   name: string;
   targetPct: number;
-  flavorIndex: number;
+  /** Manual display order, set via drag-and-drop — also drives this group's
+   * derived color (see lib/calc/color.ts hueForGroupIndex). */
+  sortOrder: number;
 }
 
 export interface DraftHolding {
@@ -32,7 +34,7 @@ export interface DraftHolding {
 }
 
 export function toDraftGroup(g: AssetGroup): DraftGroup {
-  return { clientKey: g.id, id: g.id, name: g.name, targetPct: g.targetPct, flavorIndex: g.flavorIndex };
+  return { clientKey: g.id, id: g.id, name: g.name, targetPct: g.targetPct, sortOrder: g.sortOrder };
 }
 
 export function toDraftHolding(h: Holding): DraftHolding {
@@ -52,8 +54,8 @@ export function toDraftHolding(h: Holding): DraftHolding {
   };
 }
 
-export function newDraftGroup(flavorIndex: number): DraftGroup {
-  return { clientKey: crypto.randomUUID(), id: null, name: "새 자산군", targetPct: 0, flavorIndex };
+export function newDraftGroup(sortOrder: number): DraftGroup {
+  return { clientKey: crypto.randomUUID(), id: null, name: "새 자산군", targetPct: 0, sortOrder };
 }
 
 /**
@@ -91,6 +93,17 @@ export function reorderDraftHoldings(
   return holdings.map((h) => {
     const sortOrder = orderByClientKey.get(h.clientKey);
     return sortOrder === undefined ? h : { ...h, sortOrder };
+  });
+}
+
+/** Reassigns sortOrder (0, 1, 2, ...) for all draft groups after a
+ * drag-and-drop reorder — `orderedClientKeys` is every group's clientKey in
+ * its new order. */
+export function reorderDraftGroups(groups: DraftGroup[], orderedClientKeys: string[]): DraftGroup[] {
+  const orderByClientKey = new Map(orderedClientKeys.map((key, index) => [key, index]));
+  return groups.map((g) => {
+    const sortOrder = orderByClientKey.get(g.clientKey);
+    return sortOrder === undefined ? g : { ...g, sortOrder };
   });
 }
 
@@ -147,7 +160,7 @@ export async function commitSetupDraft({
   const clientKeyToGroupId = new Map<string, string>();
   for (const g of draftGroups) {
     if (g.id === null) {
-      const created = await mutations.addGroup({ name: g.name, targetPct: g.targetPct, flavorIndex: g.flavorIndex });
+      const created = await mutations.addGroup({ name: g.name, targetPct: g.targetPct, sortOrder: g.sortOrder });
       clientKeyToGroupId.set(g.clientKey, created.id);
     } else {
       clientKeyToGroupId.set(g.clientKey, g.id);
@@ -163,7 +176,7 @@ export async function commitSetupDraft({
     const patch: Partial<NewAssetGroup> = {};
     if (original.name !== g.name) patch.name = g.name;
     if (original.targetPct !== g.targetPct) patch.targetPct = g.targetPct;
-    if (original.flavorIndex !== g.flavorIndex) patch.flavorIndex = g.flavorIndex;
+    if (original.sortOrder !== g.sortOrder) patch.sortOrder = g.sortOrder;
     if (Object.keys(patch).length > 0) {
       await mutations.updateGroup({ id: g.id, patch });
     }

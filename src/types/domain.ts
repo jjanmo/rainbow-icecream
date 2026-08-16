@@ -6,7 +6,10 @@ export interface AssetGroup {
   userId: string;
   name: string;
   targetPct: number;
-  flavorIndex: number;
+  /** Manual display order (lower = earlier), set via drag-and-drop on /setup.
+   * Also drives this group's color — see lib/calc/color.ts hueForGroupIndex —
+   * color itself is never stored, only derived from position. */
+  sortOrder: number;
   createdAt: string;
 }
 

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { toast } from "sonner";
 import { AllocationBar } from "@/components/setup/AllocationBar";
 import { EditGroupCard } from "@/components/setup/EditGroupCard";
@@ -11,12 +13,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAddGroup, useDeleteGroup, useUpdateGroup } from "@/hooks/useGroups";
 import { useAddHolding, useDeleteHolding, useUpdateHolding } from "@/hooks/useHoldings";
 import { useRebalanceData } from "@/hooks/useRebalanceData";
-import { FLAVOR_HEXES } from "@/lib/calc/color";
+import { hueForGroupIndex, groupColor } from "@/lib/calc/color";
 import { fmtPct, fmtWon } from "@/lib/format";
 import {
   commitSetupDraft,
   draftHoldingFromForm,
   newDraftGroup,
+  reorderDraftGroups,
   reorderDraftHoldings,
   toDraftGroup,
   toDraftHolding,
@@ -86,7 +89,7 @@ export default function SetupPage() {
     }
   }
 
-  function updateDraftGroup(clientKey: string, patch: Partial<Pick<DraftGroup, "name" | "targetPct" | "flavorIndex">>) {
+  function updateDraftGroup(clientKey: string, patch: Partial<Pick<DraftGroup, "name" | "targetPct">>) {
     setDraftGroups((groups) => groups.map((g) => (g.clientKey === clientKey ? { ...g, ...patch } : g)));
   }
 
@@ -96,7 +99,11 @@ export default function SetupPage() {
   }
 
   function addDraftGroup() {
-    setDraftGroups((groups) => [...groups, newDraftGroup(groups.length % FLAVOR_HEXES.length)]);
+    setDraftGroups((groups) => [...groups, newDraftGroup(groups.length)]);
+  }
+
+  function reorderGroups(orderedClientKeys: string[]) {
+    setDraftGroups((groups) => reorderDraftGroups(groups, orderedClientKeys));
   }
 
   function updateDraftHolding(clientKey: string, patch: Partial<DraftHolding>) {
@@ -119,6 +126,23 @@ export default function SetupPage() {
     ]);
     setAddingToGroupKey(null);
   }
+
+  const groupSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleGroupDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const clientKeys = sortedDraftGroups.map((g) => g.clientKey);
+    const oldIndex = clientKeys.indexOf(String(active.id));
+    const newIndex = clientKeys.indexOf(String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+    reorderGroups(arrayMove(clientKeys, oldIndex, newIndex));
+  }
+
+  const sortedDraftGroups = [...draftGroups].sort((a, b) => a.sortOrder - b.sortOrder);
 
   return (
     <div>
@@ -168,22 +192,31 @@ export default function SetupPage() {
         </div>
       ) : isEditing ? (
         <>
-          {draftGroups.map((group) => (
-            <EditGroupCard
-              key={group.clientKey}
-              group={group}
-              holdings={draftHoldings
-                .filter((h) => h.groupClientKey === group.clientKey)
-                .sort((a, b) => a.sortOrder - b.sortOrder)}
-              groupOptions={draftGroups.map((g) => ({ id: g.clientKey, name: g.name }))}
-              onUpdate={(patch) => updateDraftGroup(group.clientKey, patch)}
-              onDelete={() => deleteDraftGroup(group.clientKey)}
-              onAddHolding={() => setAddingToGroupKey(group.clientKey)}
-              onUpdateHolding={updateDraftHolding}
-              onReorderHoldings={reorderHoldings}
-              onDeleteHolding={deleteDraftHolding}
-            />
-          ))}
+          <DndContext sensors={groupSensors} collisionDetection={closestCenter} onDragEnd={handleGroupDragEnd}>
+            <SortableContext
+              items={sortedDraftGroups.map((g) => g.clientKey)}
+              strategy={verticalListSortingStrategy}
+            >
+              {sortedDraftGroups.map((group, index) => (
+                <EditGroupCard
+                  key={group.clientKey}
+                  group={group}
+                  color={groupColor(index, sortedDraftGroups.length)}
+                  hue={hueForGroupIndex(index, sortedDraftGroups.length)}
+                  holdings={draftHoldings
+                    .filter((h) => h.groupClientKey === group.clientKey)
+                    .sort((a, b) => a.sortOrder - b.sortOrder)}
+                  groupOptions={sortedDraftGroups.map((g) => ({ id: g.clientKey, name: g.name }))}
+                  onUpdate={(patch) => updateDraftGroup(group.clientKey, patch)}
+                  onDelete={() => deleteDraftGroup(group.clientKey)}
+                  onAddHolding={() => setAddingToGroupKey(group.clientKey)}
+                  onUpdateHolding={updateDraftHolding}
+                  onReorderHoldings={reorderHoldings}
+                  onDeleteHolding={deleteDraftHolding}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
 
           <Button
             type="button"
@@ -197,7 +230,7 @@ export default function SetupPage() {
           <HoldingFormDialog
             open={addingToGroupKey !== null}
             onOpenChange={(open) => !open && setAddingToGroupKey(null)}
-            groupOptions={draftGroups.map((g) => ({ id: g.clientKey, name: g.name }))}
+            groupOptions={sortedDraftGroups.map((g) => ({ id: g.clientKey, name: g.name }))}
             defaultGroupId={addingToGroupKey}
             onSubmit={submitHoldingForm}
           />

@@ -1,6 +1,8 @@
 // Ported 1:1 from the claude.ai/design mockup's computeDerived color system:
-// 6 brand "flavor" hues, a fixed 4-level shade scale for group swatches,
-// and a continuous tint-by-index scale for holdings within a group.
+// 6 brand "flavor" hues (still used for one-off semantic colors like
+// GOOD_COLOR), a fixed 4-level shade scale, and a continuous tint-by-index
+// scale for holdings within a group. Group colors themselves are no longer
+// picked from this fixed set — see hueForGroupIndex below.
 
 export const FLAVOR_HEXES = [
   "#F2547D", // 딸기 Strawberry
@@ -37,27 +39,28 @@ export function hexToHue(hex: string): number {
 
 export const FLAVOR_HUES = FLAVOR_HEXES.map(hexToHue);
 
-/** Wraps modulo FLAVOR_HUES.length so a 7th+ group cycles back through the palette. */
-export function hueForFlavorIndex(flavorIndex: number): number {
-  const n = FLAVOR_HUES.length;
-  return FLAVOR_HUES[((flavorIndex % n) + n) % n];
-}
-
 export function colorFor(hue: number, level = 0): string {
   const s = SHADES[level] ?? SHADES[0];
   return `oklch(${s.L}% ${s.C} ${hue})`;
 }
 
-export function groupColor(flavorIndex: number): string {
-  return colorFor(hueForFlavorIndex(flavorIndex), 0);
+/** Hue wheel start for group index 0, chosen away from the destructive red hue. */
+const GROUP_HUE_START = 200;
+
+/**
+ * Each asset group's color is derived purely from its position among the
+ * user's groups (`sortOrder`), evenly spaced around the hue wheel — not
+ * user-settable, not stored. This stays maximally distinct for any number
+ * of groups, unlike a fixed palette that collides once there are more
+ * groups than preset colors.
+ */
+export function hueForGroupIndex(index: number, total: number): number {
+  const n = Math.max(total, 1);
+  return (GROUP_HUE_START + (360 * index) / n) % 360;
 }
 
-export function flavorSwatchOptions(selectedFlavorIndex: number) {
-  return FLAVOR_HUES.map((hue, idx) => ({
-    flavorIndex: idx,
-    color: colorFor(hue, 0),
-    selected: idx === selectedFlavorIndex,
-  }));
+export function groupColor(index: number, total: number): string {
+  return colorFor(hueForGroupIndex(index, total), 0);
 }
 
 /**

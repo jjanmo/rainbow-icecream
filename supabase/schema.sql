@@ -8,10 +8,14 @@ create table if not exists asset_groups (
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   name text not null,
   target_pct numeric not null default 0 check (target_pct between 0 and 100),
-  flavor_index int not null default 0 check (flavor_index between 0 and 5),
+  sort_order int not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- Deliberately no flavor_index/color column: each group's color is derived
+-- purely from its position among the user's groups (see lib/calc/color.ts
+-- hueForGroupIndex), evenly spaced around the hue wheel so it stays
+-- maximally distinct regardless of how many groups exist. Not user-settable.
 
 create table if not exists holdings (
   id uuid primary key default gen_random_uuid(),
