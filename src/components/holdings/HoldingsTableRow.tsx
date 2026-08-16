@@ -20,7 +20,6 @@ export function HoldingsTableRow({
     <TableRow>
       <TableCell>
         <div className="flex items-center gap-1.5">
-          <div className="size-2.5 shrink-0 rounded-full" style={{ background: holding.color }} />
           <div className="min-w-0">
             <FitText className="font-semibold">{holding.name}</FitText>
             <FitText className="font-mono text-muted-foreground">{holding.ticker || " "}</FitText>
