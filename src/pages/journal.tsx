@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
 import { ExecutionFormDialog, type ExecutionSubmit } from '@/components/journal/ExecutionFormDialog';
 import { DataErrorNotice } from '@/components/shared/DataErrorNotice';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useAddExecution, useDeleteExecution, useExecutions } from '@/hooks/useExecutions';
+import { useAddExecution, useDeleteExecution, useExecutions, useUpdateExecution } from '@/hooks/useExecutions';
 import { useGroups } from '@/hooks/useGroups';
 import { useAddHolding, useHoldings } from '@/hooks/useHoldings';
 import { useTradeNotes, useUpsertTradeNote } from '@/hooks/useTradeNotes';
@@ -15,7 +15,7 @@ import { OversoldError } from '@/lib/journal/commit';
 import { executionNoteKey, positionNoteKey } from '@/lib/journal/noteTarget';
 import { replayHolding, type ClosedLot } from '@/lib/journal/replay';
 import { fmtQty, fmtUsd, fmtWon } from '@/lib/format';
-import { INTENT_LABELS, type Execution } from '@/types/journal';
+import { INTENT_LABELS, type Execution, type NewExecution } from '@/types/journal';
 import type { Holding } from '@/types/domain';
 
 /** 로컬 시간대 기준 'YYYY-MM-DD'. 체결은 UTC로 저장되므로 표시 시점에 변환한다. */
@@ -37,6 +37,7 @@ export default function JournalPage() {
   const executionsQuery = useExecutions();
   const tradeNotesQuery = useTradeNotes();
   const addExecution = useAddExecution();
+  const updateExecution = useUpdateExecution();
   const deleteExecution = useDeleteExecution();
   const addHolding = useAddHolding();
   const upsertTradeNote = useUpsertTradeNote();
@@ -45,6 +46,7 @@ export default function JournalPage() {
   const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() });
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingExecution, setEditingExecution] = useState<Execution | null>(null);
 
   const holdings = useMemo(() => holdingsQuery.data ?? [], [holdingsQuery.data]);
   const holdingById = useMemo(() => new Map(holdings.map((h) => [h.id, h])), [holdings]);
@@ -123,6 +125,22 @@ export default function JournalPage() {
     });
   }
 
+  function goToToday() {
+    const t = new Date();
+    setCursor({ year: t.getFullYear(), month: t.getMonth() });
+    setSelectedDay(localDayKey(t.toISOString()));
+  }
+
+  function openAddDialog() {
+    setEditingExecution(null);
+    setDialogOpen(true);
+  }
+
+  function openEditDialog(execution: Execution) {
+    setEditingExecution(execution);
+    setDialogOpen(true);
+  }
+
   async function handleSubmit(submit: ExecutionSubmit) {
     let holding: Holding;
     let execution: Execution;
@@ -157,6 +175,23 @@ export default function JournalPage() {
     }
   }
 
+  async function handleUpdate({ id, patch }: { id: string; patch: Omit<NewExecution, 'holdingId'> }) {
+    const target = executionsQuery.data?.find((e) => e.id === id);
+    const holding = target ? holdingById.get(target.holdingId) : undefined;
+    if (!holding) return;
+    try {
+      await updateExecution.mutateAsync({ holding, id, patch });
+      toast.success('체결을 수정했습니다. 이후 구간이 재계산됩니다.');
+    } catch (err) {
+      if (err instanceof OversoldError) {
+        toast.error('보유 수량보다 많이 매도하는 체결이라 수정하지 않았습니다.');
+        return;
+      }
+      console.error('Failed to update execution', err);
+      toast.error('수정에 실패했습니다.');
+    }
+  }
+
   async function handleDelete(execution: Execution) {
     const holding = holdingById.get(execution.holdingId);
     if (!holding) return;
@@ -178,8 +213,8 @@ export default function JournalPage() {
             체결을 기록하면 보유 현황이 그 기록에서 자동으로 계산됩니다.
           </p>
         </div>
-        <Button onClick={() => setDialogOpen(true)} disabled={(groupsQuery.data ?? []).length === 0}>
-          + 체결 입력
+        <Button onClick={openAddDialog} disabled={(groupsQuery.data ?? []).length === 0}>
+          + 매매 추가
         </Button>
       </div>
 
@@ -193,8 +228,8 @@ export default function JournalPage() {
       ) : (groupsQuery.data ?? []).length === 0 ? (
         <p className="text-sm text-muted-foreground">먼저 포트폴리오 설정에서 자산군을 추가해주세요.</p>
       ) : (
-        <>
-          <div className="mb-5 rounded-lg border border-border bg-card p-4 sm:p-5">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+          <div className="rounded-lg border border-border bg-card p-4 sm:p-5 lg:w-90 lg:shrink-0">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-baseline gap-2">
                 <span className="text-[15px] font-semibold">
@@ -205,6 +240,9 @@ export default function JournalPage() {
               <div className="flex gap-1">
                 <Button variant="ghost" size="icon-xs" onClick={() => shiftMonth(-1)} title="이전 달">
                   <ChevronLeft className="size-4" />
+                </Button>
+                <Button variant="ghost" size="xs" onClick={goToToday} title="오늘로 이동">
+                  오늘
                 </Button>
                 <Button variant="ghost" size="icon-xs" onClick={() => shiftMonth(1)} title="다음 달">
                   <ChevronRight className="size-4" />
@@ -228,12 +266,12 @@ export default function JournalPage() {
                     key={key}
                     type="button"
                     onClick={() => setSelectedDay(isSelected ? null : key)}
-                    className={`flex aspect-square flex-col items-center justify-center rounded-md text-xs transition-colors ${
+                    className={`flex aspect-square flex-col items-center justify-center rounded-md border text-xs transition-colors ${
                       isSelected
-                        ? 'bg-accent text-accent-foreground'
+                        ? 'border-primary bg-accent text-accent-foreground'
                         : list.length > 0
-                          ? 'bg-muted font-semibold hover:bg-accent'
-                          : 'text-muted-foreground hover:bg-muted'
+                          ? 'border-border bg-muted font-semibold hover:bg-accent'
+                          : 'border-border/60 text-muted-foreground hover:bg-muted'
                     }`}
                   >
                     <span>{day}</span>
@@ -244,25 +282,31 @@ export default function JournalPage() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
-            <div className="mb-3 text-[13px] font-semibold">
+          {/* lg 이상에서는 달력과 나란히 두고 목록만 내부 스크롤한다 — 목록이 길어져도
+              페이지 자체가 스크롤되면서 달력이 화면 밖으로 밀려나지 않게 하기 위해서다.
+              높이 값은 상단 네비게이션 + 페이지 헤더가 차지하는 대략적인 여백을 뺀 값이다. */}
+          <div className="flex min-w-0 flex-1 flex-col rounded-lg border border-border bg-card p-4 sm:p-5 lg:max-h-[calc(100vh-220px)]">
+            <div className="mb-3 shrink-0 text-[13px] font-semibold">
               {selectedDay ? `${selectedDay} 체결` : `${cursor.month + 1}월 전체 체결`}
             </div>
-            <ExecutionList
-              executions={
-                selectedDay
-                  ? dayList
-                  : [...executionsByDay.entries()]
-                      .filter(([d]) => d.startsWith(monthPrefix))
-                      .flatMap(([, list]) => list)
-                      .sort((a, b) => b.executedAt.localeCompare(a.executedAt))
-              }
-              holdingById={holdingById}
-              closedLotByExecutionId={closedLotByExecutionId}
-              onDelete={handleDelete}
-            />
+            <div className="min-h-0 overflow-y-auto">
+              <ExecutionList
+                executions={
+                  selectedDay
+                    ? dayList
+                    : [...executionsByDay.entries()]
+                        .filter(([d]) => d.startsWith(monthPrefix))
+                        .flatMap(([, list]) => list)
+                        .sort((a, b) => b.executedAt.localeCompare(a.executedAt))
+                }
+                holdingById={holdingById}
+                closedLotByExecutionId={closedLotByExecutionId}
+                onEdit={openEditDialog}
+                onDelete={handleDelete}
+              />
+            </div>
           </div>
-        </>
+        </div>
       )}
 
       <ExecutionFormDialog
@@ -273,6 +317,8 @@ export default function JournalPage() {
         tradeNotes={tradeNotes}
         setupTagSuggestions={setupTagSuggestions}
         onSubmit={handleSubmit}
+        editingExecution={editingExecution}
+        onUpdate={handleUpdate}
       />
     </div>
   );
@@ -282,11 +328,13 @@ function ExecutionList({
   executions,
   holdingById,
   closedLotByExecutionId,
+  onEdit,
   onDelete,
 }: {
   executions: Execution[];
   holdingById: Map<string, Holding>;
   closedLotByExecutionId: Map<string, ClosedLot>;
+  onEdit: (execution: Execution) => void;
   onDelete: (execution: Execution) => void;
 }) {
   if (executions.length === 0) {
@@ -326,6 +374,15 @@ function ExecutionList({
             <span className="ml-auto shrink-0 font-mono text-xs">
               {fmtQty(e.qty)} × {fmt(e.price)}
             </span>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => onEdit(e)}
+              className="shrink-0 text-muted-foreground"
+              title="체결 수정"
+            >
+              <Pencil className="size-3.5" />
+            </Button>
             <Button
               variant="ghost"
               size="icon-xs"

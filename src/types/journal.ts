@@ -43,8 +43,8 @@ export interface Execution {
 export type NewExecution = Omit<Execution, "id" | "userId" | "createdAt">;
 
 /**
- * 정성 기록. 체결과 분리된 별도 엔티티다 — 분할 매수를 3번 해도 라지는 하나여야
- * 하므로 체결 컬럼으로 인라인하지 않는다 (ADR-0031).
+ * 정성 기록. 체결과 분리된 별도 엔티티다 — 분할 매수를 3번 해도 매매 근거는
+ * 하나여야 하므로 체결 컬럼으로 인라인하지 않는다 (ADR-0031).
  */
 export interface TradeNote {
   id: string;
@@ -58,7 +58,7 @@ export interface TradeNote {
   emotionTags: string[];
   exitReason: ExitReason | null;
   followedPlan: boolean | null;
-  /** 라지가 깨지는 조건. 이게 없으면 "라지 훼손"과 "감정적 이탈"을 구분할 수 없다. */
+  /** 매매 근거가 깨지는 조건. 이게 없으면 "근거 훼손"과 "감정적 이탈"을 구분할 수 없다. */
   invalidationCondition: string | null;
   stopPrice: number | null;
   targetPrice: number | null;
@@ -72,8 +72,8 @@ export type NewTradeNote = Omit<TradeNote, "id" | "userId" | "createdAt">;
 export const EMOTION_TAGS = ["조급함", "FOMO", "복수매매", "확신과잉", "무감정"] as const;
 
 export const EXIT_REASON_LABELS: Record<ExitReason, string> = {
-  THESIS_MET: "라지 달성",
-  THESIS_BROKEN: "라지 훼손",
+  THESIS_MET: "근거 달성",
+  THESIS_BROKEN: "근거 훼손",
   REBALANCE: "리밸런싱",
   STOP_HIT: "손절",
   EMOTIONAL: "감정적 이탈",

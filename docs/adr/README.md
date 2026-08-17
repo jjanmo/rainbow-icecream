@@ -44,6 +44,7 @@
 | [0036](./0036-holding-crud-moved-to-holdings-page.md) | 종목 CRUD를 보유종목 페이지로 일원화, 설정 페이지엔 자산군 간 dnd 추가 | Accepted |
 | [0037](./0037-block-completion-under-100-target-too.md) | 자산군 목표 비중 합계 100% 미만도 완료 차단 | Accepted |
 | [0038](./0038-drop-fx-rate-native-currency-pnl.md) | 체결에 환율을 저장하지 않고, 실현손익은 거래 통화 기준으로만 표시 | Accepted |
+| [0039](./0039-execution-edit-entry-point.md) | 매매일지에 체결 수정 진입점 추가, 종목 재배정은 미지원 | Accepted |
 
 ## 새 ADR 작성 형식
 

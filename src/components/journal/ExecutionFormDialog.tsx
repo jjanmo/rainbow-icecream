@@ -17,6 +17,7 @@ import {
   EXIT_REASON_LABELS,
   INTENT_LABELS,
   SELL_INTENTS,
+  type Execution,
   type ExecutionIntent,
   type ExitReason,
   type NewExecution,
@@ -67,7 +68,7 @@ export interface ExecutionSubmit {
 }
 
 /**
- * 체결 입력. 필수 입력을 6개(종목·구분·수량·단가·체결일시 + 계좌는 종목에 종속)
+ * 매매 추가. 필수 입력을 6개(종목·구분·수량·단가·체결일시 + 계좌는 종목에 종속)
  * 이하로 유지한다 — 근거 섹션은 기본 접힘 상태의 선택 입력이라, 채우지 않아도
  * 저장할 수 있다. 입력 마찰이 커지면 기록 자체를 안 하게 된다.
  *
@@ -85,6 +86,8 @@ export function ExecutionFormDialog({
   tradeNotes,
   setupTagSuggestions,
   onSubmit,
+  editingExecution,
+  onUpdate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -95,6 +98,11 @@ export function ExecutionFormDialog({
   /** 셋업 태그 자동완성 후보 — 기존에 쓰인 태그 전체. */
   setupTagSuggestions: string[];
   onSubmit: (submit: ExecutionSubmit) => void;
+  /** 지정하면 새 체결 추가가 아니라 이 체결을 고치는 모드로 연다 — 종목은 바꿀
+   * 수 없고(다른 종목으로 옮기는 건 별도 리플레이 대상이 둘이 되는 문제라 지원하지
+   * 않는다), 근거 섹션도 이 모드에서는 숨긴다(근거는 별도 편집 경로가 없다). */
+  editingExecution?: Execution | null;
+  onUpdate?: (input: { id: string; patch: Omit<NewExecution, 'holdingId'> }) => void;
 }) {
   const [side, setSide] = useState<Side>('BUY');
   const [holdingId, setHoldingId] = useState('');
@@ -127,7 +135,16 @@ export function ExecutionFormDialog({
   // 열릴 때 초기화 — effect 가 아니라 렌더 중 조정한다 (프로젝트 컨벤션).
   if (open !== prevOpen) {
     setPrevOpen(open);
-    if (open) {
+    if (open && editingExecution) {
+      setSide(editingExecution.side);
+      setIntent(editingExecution.intent);
+      setHoldingId(editingExecution.holdingId);
+      setIsNewHolding(false);
+      setQtyText(String(editingExecution.qty));
+      setPriceText(String(editingExecution.price));
+      setExecutedAtLocal(toLocalInputValue(editingExecution.executedAt));
+      setNoteOpen(false);
+    } else if (open) {
       setSide('BUY');
       setIntent('NEW');
       setHoldingId(holdings[0]?.id ?? '');
@@ -170,11 +187,19 @@ export function ExecutionFormDialog({
   const amount = qty > 0 && price > 0 ? computeExecutionAmount({ side, qty, price, region }) : null;
 
   // 매도는 보유 수량을 넘을 수 없다 — 저장 후 리플레이에서 거부되므로 여기서 먼저 막는다.
+  // 수정 모드는 서버 쪽 리플레이가 최종 판단을 하므로 여기서 미리 막지 않는다
+  // (기존 체결 하나를 고치는 거라 "지금 보유 수량"과 단순 비교가 맞지 않는다).
   const available = selected?.qty ?? 0;
-  const oversold = side === 'SELL' && !isNewHolding && qty > available;
+  const oversold = !editingExecution && side === 'SELL' && !isNewHolding && qty > available;
 
-  const intentOptions = side === 'BUY' ? BUY_INTENTS : SELL_INTENTS;
-  const resolvedIntent = intentOptions.includes(intent) ? intent : intentOptions[0];
+  // 새 종목의 첫 매수는 정의상 항상 신규진입이라 고를 것이 없다 — 반대로 이미
+  // 보유 중인 종목에 매수를 추가하는 거라면 "신규진입"은 선택지에서 뺀다. 다만
+  // 이미 신규진입으로 기록된 체결을 수정하는 중이면 그 선택지를 계속 보여준다.
+  const isForcedNewIntent = side === 'BUY' && isNewHolding;
+  const allowNewIntent = isForcedNewIntent || editingExecution?.intent === 'NEW';
+  const intentOptions =
+    side === 'BUY' ? (allowNewIntent ? BUY_INTENTS : BUY_INTENTS.filter((o) => o !== 'NEW')) : SELL_INTENTS;
+  const resolvedIntent = isForcedNewIntent ? 'NEW' : intentOptions.includes(intent) ? intent : intentOptions[0];
 
   const canSubmit =
     qty > 0 &&
@@ -233,6 +258,11 @@ export function ExecutionFormDialog({
       qty,
       price,
     };
+    if (editingExecution) {
+      onUpdate?.({ id: editingExecution.id, patch: execution });
+      onOpenChange(false);
+      return;
+    }
     const note = buildNoteDraft();
     if (isNewHolding) {
       onSubmit({
@@ -268,7 +298,7 @@ export function ExecutionFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>체결 입력</DialogTitle>
+          <DialogTitle>{editingExecution ? '매매 수정' : '매매 추가'}</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
@@ -299,7 +329,7 @@ export function ExecutionFormDialog({
               <Label>
                 종목 <span className="text-destructive">*</span>
               </Label>
-              {side === 'BUY' && (
+              {side === 'BUY' && !editingExecution && (
                 <button
                   type="button"
                   onClick={() => setIsNewHolding((v) => !v)}
@@ -394,7 +424,12 @@ export function ExecutionFormDialog({
                 </div>
               </div>
             ) : (
-              <Select items={holdingItems} value={holdingId} onValueChange={(v) => setHoldingId(v ?? '')}>
+              <Select
+                items={holdingItems}
+                value={holdingId}
+                onValueChange={(v) => setHoldingId(v ?? '')}
+                disabled={!!editingExecution}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="종목 선택" />
                 </SelectTrigger>
@@ -453,6 +488,7 @@ export function ExecutionFormDialog({
               <Input
                 type="text"
                 inputMode="decimal"
+                autoComplete="off"
                 value={qtyText}
                 onChange={(e) => setQtyText(e.target.value)}
                 className="font-mono"
@@ -465,6 +501,7 @@ export function ExecutionFormDialog({
               <Input
                 type="text"
                 inputMode="decimal"
+                autoComplete="off"
                 value={priceText}
                 onChange={(e) => setPriceText(e.target.value)}
                 className="font-mono"
@@ -486,27 +523,35 @@ export function ExecutionFormDialog({
 
           <div className="flex flex-col gap-1.5">
             <Label>매매 의도</Label>
-            <div className="flex flex-wrap gap-1.5">
-              {intentOptions.map((o) => (
-                <button
-                  key={o}
-                  type="button"
-                  onClick={() => setIntent(o)}
-                  className={cn(
-                    'rounded-full border px-2.5 py-1 text-xs transition-colors',
-                    resolvedIntent === o
-                      ? 'border-primary bg-accent text-accent-foreground'
-                      : 'border-border text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {INTENT_LABELS[o]}
-                </button>
-              ))}
-            </div>
+            {isForcedNewIntent ? (
+              <span className="text-xs text-muted-foreground">
+                신규진입 — 새 종목의 첫 매수라 고를 필요 없이 항상 신규진입입니다.
+              </span>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {intentOptions.map((o) => (
+                  <button
+                    key={o}
+                    type="button"
+                    onClick={() => setIntent(o)}
+                    className={cn(
+                      'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                      resolvedIntent === o
+                        ? 'border-primary bg-accent text-accent-foreground'
+                        : 'border-border text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {INTENT_LABELS[o]}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 기본 접힘 — 채우지 않아도 저장할 수 있다. 채워두면 매수는 POSITION
-              노트(청산조건이 매도 화면 배너로 뜬다), 매도는 EXECUTION 노트로 저장된다. */}
+              노트(청산조건이 매도 화면 배너로 뜬다), 매도는 EXECUTION 노트로 저장된다.
+              수정 모드에서는 숨긴다 — 근거는 이 다이얼로그에 별도 편집 경로가 없다. */}
+          {!editingExecution && (
           <div className="flex flex-col gap-1.5">
             <button
               type="button"
@@ -531,7 +576,7 @@ export function ExecutionFormDialog({
                       />
                     </div>
                     <div className="flex flex-col gap-1.5">
-                      <Label className="text-[11px]">청산조건 (라지가 깨지는 조건)</Label>
+                      <Label className="text-[11px]">청산조건 (매매 근거가 깨지는 조건)</Label>
                       <Input
                         value={invalidationCondition}
                         onChange={(e) => setInvalidationCondition(e.target.value)}
@@ -641,12 +686,13 @@ export function ExecutionFormDialog({
                     value={noteBody}
                     onChange={(e) => setNoteBody(e.target.value)}
                     rows={2}
-                    className="min-h-0 text-xs"
+                    className="max-h-24 resize-none text-xs"
                   />
                 </div>
               </div>
             )}
           </div>
+          )}
 
           {/* 계산 결과를 입력 중에 보여준다 — 오타를 즉시 발견하게 하는 장치다. */}
           {amount && (
