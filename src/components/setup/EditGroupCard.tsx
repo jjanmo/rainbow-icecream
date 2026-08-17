@@ -22,7 +22,7 @@ import { Input } from '@/components/ui/input';
 import { useEditableField, useEditableNumberField } from '@/hooks/useEditableField';
 import { tintForIndex } from '@/lib/calc/color';
 import { resolveHoldingValueKrw } from '@/lib/calc/rebalance';
-import type { DraftGroup, DraftHolding } from '@/lib/setupDraft';
+import { draftColorSlots, type DraftGroup, type DraftHolding } from '@/lib/setupDraft';
 import type { LivePriceMap } from '@/types/domain';
 import { EditHoldingInlineRow } from './EditHoldingInlineRow';
 
@@ -60,6 +60,9 @@ export function EditGroupCard({
   onDeleteHolding: (clientKey: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // Creation-order color slots, so a holding's tint survives drag-reordering
+  // here just like it does in read mode (ADR-0025).
+  const colorSlots = draftColorSlots(holdings);
   const name = useEditableField(group.name, (v) => onUpdate({ name: v }));
   const targetPct = useEditableNumberField(group.targetPct, (v) => onUpdate({ targetPct: v }));
 
@@ -142,13 +145,13 @@ export function EditGroupCard({
         <>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={holdings.map((h) => h.clientKey)} strategy={verticalListSortingStrategy}>
-              {holdings.map((holding, index) => {
+              {holdings.map((holding) => {
                 const resolved = resolveHoldingValueKrw(holding, prices, usdKrwRate);
                 return (
                   <EditHoldingInlineRow
                     key={holding.clientKey}
                     holding={holding}
-                    color={tintForIndex(hue, index, holdings.length)}
+                    color={tintForIndex(hue, colorSlots.get(holding.clientKey) ?? 0, holdings.length)}
                     value={resolved.value}
                     valueNative={resolved.valueNative}
                     groupOptions={groupOptions}

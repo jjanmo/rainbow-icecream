@@ -19,6 +19,11 @@ export interface DraftGroup {
 export interface DraftHolding {
   clientKey: string;
   id: string | null;
+  /** Creation timestamp of the saved row, or null for a holding added during
+   * this edit session. Never edited or written back — carried purely so edit
+   * mode can pin colors to creation order like computeRebalance does
+   * (see draftColorSlots / ADR-0025). */
+  createdAt: string | null;
   /** References a DraftGroup.clientKey, not a real group id — the group
    * itself may also be new and not have a real id yet. */
   groupClientKey: string;
@@ -41,6 +46,7 @@ export function toDraftHolding(h: Holding): DraftHolding {
   return {
     clientKey: h.id,
     id: h.id,
+    createdAt: h.createdAt,
     groupClientKey: h.groupId,
     ticker: h.ticker,
     name: h.name,
@@ -67,6 +73,7 @@ export function draftHoldingFromForm(holding: NewHolding): DraftHolding {
   return {
     clientKey: crypto.randomUUID(),
     id: null,
+    createdAt: null,
     groupClientKey: holding.groupId,
     ticker: holding.ticker,
     name: holding.name,
@@ -94,6 +101,25 @@ export function reorderDraftHoldings(
     const sortOrder = orderByClientKey.get(h.clientKey);
     return sortOrder === undefined ? h : { ...h, sortOrder };
   });
+}
+
+/**
+ * Color slot (0, 1, 2, ...) per holding, keyed by clientKey — the edit-mode
+ * counterpart of computeRebalance's colorSlotById. Ordered by creation
+ * (created_at, then clientKey), NOT by display order, so dragging a holding
+ * around doesn't repaint it (ADR-0025). Holdings added during this edit
+ * session have no created_at yet and sort last, as they will once saved.
+ */
+export function draftColorSlots(holdings: DraftHolding[]): Map<string, number> {
+  // MAX_SAFE_INTEGER rather than Infinity so two unsaved holdings subtract to
+  // 0 (not NaN) and fall through to the clientKey tiebreak.
+  const time = (h: DraftHolding) =>
+    h.createdAt === null ? Number.MAX_SAFE_INTEGER : new Date(h.createdAt).getTime();
+  return new Map(
+    [...holdings]
+      .sort((a, b) => time(a) - time(b) || a.clientKey.localeCompare(b.clientKey))
+      .map((h, index) => [h.clientKey, index] as const),
+  );
 }
 
 /** Reassigns sortOrder (0, 1, 2, ...) for all draft groups after a
