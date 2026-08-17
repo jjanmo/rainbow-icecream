@@ -42,7 +42,7 @@ export default function JournalPage() {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const holdings = holdingsQuery.data ?? [];
+  const holdings = useMemo(() => holdingsQuery.data ?? [], [holdingsQuery.data]);
   const holdingById = useMemo(() => new Map(holdings.map((h) => [h.id, h])), [holdings]);
 
   const executionsByDay = useMemo(() => {

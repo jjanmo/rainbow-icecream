@@ -16,7 +16,7 @@ let pass = 0, fail = 0;
 function eq(label: string, got: unknown, want: unknown) {
   const ok = JSON.stringify(got) === JSON.stringify(want);
   console.log(`  ${ok ? "PASS" : "FAIL"}  ${label}  got=${JSON.stringify(got)}${ok ? "" : ` want=${JSON.stringify(want)}`}`);
-  ok ? pass++ : fail++;
+  if (ok) pass++; else fail++;
 }
 const ex = (o: Partial<Execution>): Execution => ({
   id: o.id ?? "e", userId: "u", holdingId: "h", side: o.side ?? "BUY", intent: o.intent ?? "NEW",
