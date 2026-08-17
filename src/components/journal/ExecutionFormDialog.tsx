@@ -73,13 +73,15 @@ export interface ExecutionSubmit {
  *
  * 수수료·증권거래세는 계산하지 않는다 — 증권사·이벤트 할인율마다 달라 정밀
  * 계산의 실익이 낮다고 판단해 뺐다 (ADR-0034).
+ *
+ * 환율도 입력받지 않는다 — 해외 종목은 항상 달러 기준으로만 기록·표시하고
+ * 원화로 환산하지 않는다 (ADR-0038).
  */
 export function ExecutionFormDialog({
   open,
   onOpenChange,
   holdings,
   groupOptions,
-  defaultFxRate,
   tradeNotes,
   setupTagSuggestions,
   onSubmit,
@@ -88,8 +90,6 @@ export function ExecutionFormDialog({
   onOpenChange: (open: boolean) => void;
   holdings: Holding[];
   groupOptions: { id: string; name: string }[];
-  /** 해외 종목의 환율 기본값 — 사용자가 수정할 수 있게 노출한다 (ADR-0029). */
-  defaultFxRate: number;
   /** 매도 화면 상단에 그 종목의 POSITION 노트(매수 근거·청산조건)를 띄우기 위해 필요하다. */
   tradeNotes: TradeNote[];
   /** 셋업 태그 자동완성 후보 — 기존에 쓰인 태그 전체. */
@@ -102,7 +102,6 @@ export function ExecutionFormDialog({
   const [intent, setIntent] = useState<ExecutionIntent>('NEW');
   const [qtyText, setQtyText] = useState('');
   const [priceText, setPriceText] = useState('');
-  const [fxRateText, setFxRateText] = useState(String(Math.round(defaultFxRate)));
   const [executedAtLocal, setExecutedAtLocal] = useState('');
   const [newHolding, setNewHolding] = useState<NewHoldingDraft>({
     groupId: '',
@@ -135,7 +134,6 @@ export function ExecutionFormDialog({
       setIsNewHolding(holdings.length === 0);
       setQtyText('');
       setPriceText('');
-      setFxRateText(String(Math.round(defaultFxRate)));
       setExecutedAtLocal(toLocalInputValue(new Date().toISOString()));
       setNewHolding({
         groupId: groupOptions[0]?.id ?? '',
@@ -164,11 +162,9 @@ export function ExecutionFormDialog({
       : undefined;
   const region: Region = isNewHolding ? newHolding.region : (selected?.region ?? '국내');
   const currency = currencyOf(region);
-  const isOverseas = region === '해외';
 
   const qty = normalizeQty(parseFloat(qtyText) || 0);
   const price = parseFloat(priceText) || 0;
-  const fxRate = isOverseas ? parseFloat(fxRateText) || 0 : 1;
   const executedAt = executedAtLocal ? new Date(executedAtLocal).toISOString() : '';
 
   const amount = qty > 0 && price > 0 ? computeExecutionAmount({ side, qty, price, region }) : null;
@@ -185,7 +181,6 @@ export function ExecutionFormDialog({
     price > 0 &&
     !!executedAt &&
     !oversold &&
-    (isOverseas ? fxRate > 0 : true) &&
     (isNewHolding
       ? !!newHolding.groupId && newHolding.name.trim().length > 0 && side === 'BUY'
       : !!selected);
@@ -237,7 +232,6 @@ export function ExecutionFormDialog({
       executedAt,
       qty,
       price,
-      fxRate,
     };
     const note = buildNoteDraft();
     if (isNewHolding) {
@@ -478,21 +472,6 @@ export function ExecutionFormDialog({
             </div>
           </div>
 
-          {isOverseas && (
-            <div className="flex flex-col gap-1.5">
-              <Label>
-                환율 (USD→KRW) <span className="text-[11px] font-normal text-muted-foreground">체결 시점 값으로 고정 저장</span>
-              </Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={fxRateText}
-                onChange={(e) => setFxRateText(e.target.value)}
-                className="font-mono"
-              />
-            </div>
-          )}
-
           <div className="flex flex-col gap-1.5">
             <Label>
               체결일시 <span className="text-destructive">*</span>
@@ -677,9 +656,6 @@ export function ExecutionFormDialog({
                 value={fmtNative(Math.abs(amount.netCashFlow))}
                 strong
               />
-              {isOverseas && (
-                <Row label="원화 환산" value={fmtWon(Math.abs(amount.netCashFlow) * fxRate)} />
-              )}
             </div>
           )}
 

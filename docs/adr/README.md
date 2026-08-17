@@ -34,7 +34,7 @@
 | [0026](./0026-diff-sign-colors-and-threshold-10.md) | 괴리는 상승/하락 색, 조치 여부는 같은 계열 강조 · 기준 10%p · 리밸런싱 상태 컬럼 | Accepted |
 | [0027](./0027-execution-ledger-as-holding-source.md) | 보유 수량·평단은 체결 원장에서만 계산 (기존 보유는 기초잔고 체결로 흡수) | Accepted |
 | [0028](./0028-derive-fees-and-taxes.md) | 수수료·증권거래세는 계산하고 체결에 스냅샷 (국내 ETF 매도 면세) | Superseded by ADR-0034 |
-| [0029](./0029-fx-rate-snapshot.md) | 환율은 체결 시점 값 고정 저장, 환전 스프레드는 별도 비용 아님 | Accepted |
+| [0029](./0029-fx-rate-snapshot.md) | 환율은 체결 시점 값 고정 저장, 환전 스프레드는 별도 비용 아님 | Superseded by ADR-0038 |
 | [0030](./0030-number-with-rounding-guard.md) | 금액은 number 유지 + 반올림 경계에서 표현 오차 봉쇄 | Accepted |
 | [0031](./0031-structured-tags-and-separated-notes.md) | 정성 데이터는 구조화 태그 우선, 노트는 체결과 분리 | Accepted |
 | [0032](./0032-soft-delete-and-full-replay.md) | 체결 수정·삭제는 soft delete + 해당 종목 전체 리플레이 | Accepted |
@@ -43,6 +43,7 @@
 | [0035](./0035-group-delete-reassigns-to-unclassified.md) | 자산군 삭제는 하위 종목을 지우지 않고 "미분류"로 이동 | Accepted |
 | [0036](./0036-holding-crud-moved-to-holdings-page.md) | 종목 CRUD를 보유종목 페이지로 일원화, 설정 페이지엔 자산군 간 dnd 추가 | Accepted |
 | [0037](./0037-block-completion-under-100-target-too.md) | 자산군 목표 비중 합계 100% 미만도 완료 차단 | Accepted |
+| [0038](./0038-drop-fx-rate-native-currency-pnl.md) | 체결에 환율을 저장하지 않고, 실현손익은 거래 통화 기준으로만 표시 | Accepted |
 
 ## 새 ADR 작성 형식
 

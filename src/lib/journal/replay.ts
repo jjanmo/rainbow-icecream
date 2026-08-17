@@ -17,10 +17,8 @@ export interface ClosedLot {
   /** 매도 직전 평균매입가 (거래통화). */
   avgEntryPrice: number;
   exitPrice: number;
-  /** 거래통화 기준. */
+  /** 거래통화 기준(해외=USD, 국내=KRW). 원화로 환산하지 않는다 (ADR-0038). */
   realizedPnl: number;
-  /** 원화 환산 — 환차손익 포함. */
-  realizedPnlKrw: number;
   holdingDays: number;
   isFullExit: boolean;
 }
@@ -32,8 +30,6 @@ export interface ReplayResult {
   avgPrice: number;
   /** 총 취득원가 (거래통화). qty 가 0이면 반드시 0이다. */
   totalCost: number;
-  /** 총 취득원가 (원화 환산) — 해외 종목 손익을 주가/환차로 분해하는 데 쓴다. */
-  totalCostKrw: number;
   closedLots: ClosedLot[];
   /** 매도 수량이 보유 수량을 넘어서는 체결. 비었으면 정상. */
   oversold: { executionId: string; executedAt: string; qty: number; available: number }[];
@@ -73,7 +69,6 @@ export function replayHolding(executions: Execution[], ctx: ReplayContext): Repl
 
   let qty = 0;
   let totalCost = 0;
-  let totalCostKrw = 0;
   let openedAt: string | null = null;
   const closedLots: ClosedLot[] = [];
   const oversold: ReplayResult["oversold"] = [];
@@ -86,7 +81,6 @@ export function replayHolding(executions: Execution[], ctx: ReplayContext): Repl
       if (isZeroQty(qty)) openedAt = e.executedAt;
       qty = normalizeQty(qty + execQty);
       totalCost += amount.grossAmount;
-      totalCostKrw += amount.grossAmount * e.fxRate;
       continue;
     }
 
@@ -97,20 +91,15 @@ export function replayHolding(executions: Execution[], ctx: ReplayContext): Repl
     }
 
     const avgPrice = isZeroQty(qty) ? 0 : totalCost / qty;
-    const avgPriceKrw = isZeroQty(qty) ? 0 : totalCostKrw / qty;
     const costOut = avgPrice * execQty;
-    const costOutKrw = avgPriceKrw * execQty;
     const proceeds = amount.grossAmount;
-    const proceedsKrw = proceeds * e.fxRate;
 
     qty = normalizeQty(qty - execQty);
     totalCost -= costOut;
-    totalCostKrw -= costOutKrw;
     // 전량 매도면 부동소수 잔여를 남기지 않고 0으로 닫는다.
     if (isZeroQty(qty)) {
       qty = 0;
       totalCost = 0;
-      totalCostKrw = 0;
     }
 
     closedLots.push({
@@ -120,7 +109,6 @@ export function replayHolding(executions: Execution[], ctx: ReplayContext): Repl
       avgEntryPrice: avgPrice,
       exitPrice: e.price,
       realizedPnl: proceeds - costOut,
-      realizedPnlKrw: proceedsKrw - costOutKrw,
       holdingDays: openedAt ? calendarDayDiff(openedAt, e.executedAt) : 0,
       isFullExit: qty === 0,
     });
@@ -132,7 +120,6 @@ export function replayHolding(executions: Execution[], ctx: ReplayContext): Repl
     qty,
     avgPrice: isZeroQty(qty) ? 0 : totalCost / qty,
     totalCost: roundCurrency(totalCost, currency) === 0 && isZeroQty(qty) ? 0 : totalCost,
-    totalCostKrw: isZeroQty(qty) ? 0 : totalCostKrw,
     closedLots,
     oversold,
   };

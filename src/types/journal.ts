@@ -21,9 +21,10 @@ export type NoteTargetType = "EXECUTION" | "POSITION" | "DAY";
  * holdings.qty / holdings.avg_price 는 이 행들을 리플레이한 결과이며 독립적으로
  * 수정되지 않는다 (ADR-0027).
  *
- * price 는 종목의 원래 통화 기준(국내 KRW, 해외 USD)이고, fxRate 는 체결 시점에
- * 고정 저장된다 (ADR-0029). 수수료·증권거래세는 계산하지 않는다 — 증권사·이벤트
- * 할인율마다 달라 정밀 계산의 실익이 낮다고 판단해 뺐다 (ADR-0034).
+ * price 는 종목의 원래 통화 기준(국내 KRW, 해외 USD)이다. 환율은 저장하지
+ * 않는다 — 실현손익은 거래 통화 기준으로만 보여주고 원화로 환산하지 않는다
+ * (ADR-0038). 수수료·증권거래세는 계산하지 않는다 — 증권사·이벤트 할인율마다
+ * 달라 정밀 계산의 실익이 낮다고 판단해 뺐다 (ADR-0034).
  */
 export interface Execution {
   id: string;
@@ -36,8 +37,6 @@ export interface Execution {
   qty: number;
   /** 종목의 원래 통화 기준 단가. */
   price: number;
-  /** 원래 통화 → KRW. 국내 종목은 1. */
-  fxRate: number;
   createdAt: string;
 }
 

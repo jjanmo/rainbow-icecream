@@ -5,14 +5,15 @@ import { ExecutionFormDialog, type ExecutionSubmit } from '@/components/journal/
 import { DataErrorNotice } from '@/components/shared/DataErrorNotice';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useExchangeRate, DEFAULT_USD_KRW_RATE } from '@/hooks/useExchangeRate';
 import { useAddExecution, useDeleteExecution, useExecutions } from '@/hooks/useExecutions';
 import { useGroups } from '@/hooks/useGroups';
 import { useAddHolding, useHoldings } from '@/hooks/useHoldings';
 import { useTradeNotes, useUpsertTradeNote } from '@/hooks/useTradeNotes';
+import { returnColor } from '@/lib/calc/rebalance';
 import { currencyOf } from '@/lib/journal/cost';
 import { OversoldError } from '@/lib/journal/commit';
 import { executionNoteKey, positionNoteKey } from '@/lib/journal/noteTarget';
+import { replayHolding, type ClosedLot } from '@/lib/journal/replay';
 import { fmtQty, fmtUsd, fmtWon } from '@/lib/format';
 import { INTENT_LABELS, type Execution } from '@/types/journal';
 import type { Holding } from '@/types/domain';
@@ -35,7 +36,6 @@ export default function JournalPage() {
   const holdingsQuery = useHoldings();
   const executionsQuery = useExecutions();
   const tradeNotesQuery = useTradeNotes();
-  const fxQuery = useExchangeRate();
   const addExecution = useAddExecution();
   const deleteExecution = useDeleteExecution();
   const addHolding = useAddHolding();
@@ -67,6 +67,26 @@ export default function JournalPage() {
     }
     return map;
   }, [executionsQuery.data]);
+
+  // 매도 체결 하나당 실현손익 1건 — 종목별로 전체 이력을 리플레이해서 얻는다
+  // (replayHolding은 순수 함수라 여기서 다시 돌려도 안전하다, ADR-0032). 거래
+  // 통화 기준으로만 보여주고 원화로 환산하지 않는다 (ADR-0038).
+  const closedLotByExecutionId = useMemo(() => {
+    const byHolding = new Map<string, Execution[]>();
+    for (const e of executionsQuery.data ?? []) {
+      const arr = byHolding.get(e.holdingId) ?? [];
+      arr.push(e);
+      byHolding.set(e.holdingId, arr);
+    }
+    const map = new Map<string, ClosedLot>();
+    for (const [holdingId, execs] of byHolding) {
+      const holding = holdingById.get(holdingId);
+      if (!holding) continue;
+      const { closedLots } = replayHolding(execs, { region: holding.region });
+      for (const lot of closedLots) map.set(lot.executionId, lot);
+    }
+    return map;
+  }, [executionsQuery.data, holdingById]);
 
   const monthPrefix = monthKey(cursor.year, cursor.month);
   const monthCount = useMemo(
@@ -238,6 +258,7 @@ export default function JournalPage() {
                       .sort((a, b) => b.executedAt.localeCompare(a.executedAt))
               }
               holdingById={holdingById}
+              closedLotByExecutionId={closedLotByExecutionId}
               onDelete={handleDelete}
             />
           </div>
@@ -249,7 +270,6 @@ export default function JournalPage() {
         onOpenChange={setDialogOpen}
         holdings={holdings}
         groupOptions={(groupsQuery.data ?? []).map((g) => ({ id: g.id, name: g.name }))}
-        defaultFxRate={fxQuery.data?.rate ?? DEFAULT_USD_KRW_RATE}
         tradeNotes={tradeNotes}
         setupTagSuggestions={setupTagSuggestions}
         onSubmit={handleSubmit}
@@ -261,10 +281,12 @@ export default function JournalPage() {
 function ExecutionList({
   executions,
   holdingById,
+  closedLotByExecutionId,
   onDelete,
 }: {
   executions: Execution[];
   holdingById: Map<string, Holding>;
+  closedLotByExecutionId: Map<string, ClosedLot>;
   onDelete: (execution: Execution) => void;
 }) {
   if (executions.length === 0) {
@@ -278,6 +300,7 @@ function ExecutionList({
         const currency = holding ? currencyOf(holding.region) : 'KRW';
         const fmt = (n: number) => (currency === 'USD' ? fmtUsd(n) : fmtWon(n));
         const isBuy = e.side === 'BUY';
+        const closedLot = closedLotByExecutionId.get(e.id);
         return (
           <div
             key={e.id}
@@ -294,6 +317,12 @@ function ExecutionList({
               <span className="font-mono text-[11px] text-muted-foreground">{holding.ticker}</span>
             )}
             <span className="text-[11px] text-muted-foreground">{INTENT_LABELS[e.intent]}</span>
+            {closedLot && (
+              <span className="font-mono text-[11px] font-semibold" style={{ color: returnColor(closedLot.realizedPnl) }}>
+                실현손익 {closedLot.realizedPnl >= 0 ? '+' : ''}
+                {fmt(closedLot.realizedPnl)}
+              </span>
+            )}
             <span className="ml-auto shrink-0 font-mono text-xs">
               {fmtQty(e.qty)} × {fmt(e.price)}
             </span>

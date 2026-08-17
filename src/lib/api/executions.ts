@@ -10,11 +10,10 @@ interface ExecutionRow {
   executed_at: string;
   qty: number;
   price: number;
-  fx_rate: number;
   created_at: string;
 }
 
-const COLUMNS = "id, user_id, holding_id, side, intent, executed_at, qty, price, fx_rate, created_at";
+const COLUMNS = "id, user_id, holding_id, side, intent, executed_at, qty, price, created_at";
 
 function toDomain(row: ExecutionRow): Execution {
   return {
@@ -26,7 +25,6 @@ function toDomain(row: ExecutionRow): Execution {
     executedAt: row.executed_at,
     qty: Number(row.qty),
     price: Number(row.price),
-    fxRate: Number(row.fx_rate),
     createdAt: row.created_at,
   };
 }
@@ -39,7 +37,6 @@ function toRow(execution: NewExecution) {
     executed_at: execution.executedAt,
     qty: execution.qty,
     price: execution.price,
-    fx_rate: execution.fxRate,
   };
 }
 
@@ -92,7 +89,6 @@ export async function updateExecution(
   if (patch.executedAt !== undefined) update.executed_at = patch.executedAt;
   if (patch.qty !== undefined) update.qty = patch.qty;
   if (patch.price !== undefined) update.price = patch.price;
-  if (patch.fxRate !== undefined) update.fx_rate = patch.fxRate;
 
   const { error } = await supabase.from("executions").update(update).eq("id", id);
   if (error) throw error;

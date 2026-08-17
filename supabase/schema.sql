@@ -103,8 +103,8 @@ create table if not exists executions (
   qty numeric not null check (qty > 0),
   /** In the holding's native currency (KRW for 국내, USD for 해외). */
   price numeric not null check (price >= 0),
-  /** Native → KRW, frozen at execution time (ADR-0029). '1' for KRW holdings. */
-  fx_rate numeric not null default 1 check (fx_rate > 0),
+  -- Deliberately no fx_rate column: 실현손익은 거래 통화(해외=USD, 국내=KRW)
+  -- 기준으로만 보여주고 원화로 환산하지 않는다 (ADR-0038, ADR-0029를 대체).
   -- Deliberately no fee/tax columns: 수수료·증권거래세는 계산하지 않는다
   -- (ADR-0034) — 브로커·이벤트 할인율마다 달라 정밀 계산의 실익이 낮다고 판단.
   /** soft delete — physical deletes would make past 실현손익 unexplainable (ADR-0032). */
@@ -185,8 +185,8 @@ create policy "own trade notes" on trade_notes
 -- execution (PRD §4 F-7). Idempotent — skips holdings that already have one.
 -- Run once, after the tables above exist.
 -- ---------------------------------------------------------------------------
-insert into executions (user_id, holding_id, side, intent, executed_at, qty, price, fx_rate)
-select h.user_id, h.id, 'BUY', 'OPENING_BALANCE', h.created_at, h.qty, h.avg_price, 1
+insert into executions (user_id, holding_id, side, intent, executed_at, qty, price)
+select h.user_id, h.id, 'BUY', 'OPENING_BALANCE', h.created_at, h.qty, h.avg_price
 from holdings h
 where h.qty > 0
   and not exists (
@@ -207,6 +207,13 @@ alter table executions drop column if exists applied_fee_rate;
 alter table executions drop column if exists applied_tax_rate;
 alter table executions drop column if exists cost_overridden;
 drop table if exists account_fee_rates;
+
+-- ---------------------------------------------------------------------------
+-- Migration: 환율 필드 제거 (ADR-0038). 실현손익은 거래 통화 기준으로만 보여주고
+-- 원화로 환산하지 않는다 — 평가금액(보유 중인 종목의 원화 환산)은 그대로 실시간
+-- 환율을 쓰며 영향받지 않는다. Idempotent.
+-- ---------------------------------------------------------------------------
+alter table executions drop column if exists fx_rate;
 
 -- ---------------------------------------------------------------------------
 -- Migration: 자산군 삭제가 하위 종목을 지우지 않도록 변경. 종목은
