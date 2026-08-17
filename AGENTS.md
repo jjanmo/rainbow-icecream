@@ -17,6 +17,9 @@ App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/li
 ## Next.js 16 breaking changes
 - `middleware.ts` → `proxy.ts`, `export function middleware` → `export function proxy`.
 
+## Code comment language
+- Write code comments in Korean (한국어) — identifiers, commands, file paths, and log/error strings stay in English/technical form as usual; only the comment prose is Korean.
+
 ## Data model rules
 - Never persist `current_price` / any live-market-derived value in the DB — always fetched live from Toss at read time and computed in `lib/calc/rebalance.ts`. See the comment in `supabase/schema.sql`.
 - A holding with `ticker: null` (e.g. cash-like assets) means "skip live price lookup, use `avgPrice` as the value" in `lib/calc/rebalance.ts`. `HoldingFormDialog` has a KRW/$ checkbox row (below 보유수량/평균매입가) for this: checking one sets `region` to match (국내/해외), disables the 코드/티커 input, and collapses 보유수량+평균매입가 into a single 금액 field — on submit `ticker` is forced to `null`, `qty` to `1`, and the entered 금액 becomes `avgPrice` (see ADR-0022 for the exact DB mapping — there's no dedicated amount column). Unchecked (default) requires a non-empty 티커/코드 + separate 보유수량/평균매입가 as before.
