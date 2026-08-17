@@ -20,7 +20,11 @@ create table if not exists asset_groups (
 create table if not exists holdings (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
-  group_id uuid not null references asset_groups(id) on delete cascade,
+  -- restrict, not cascade: deleting a group must not delete its holdings.
+  -- lib/api/groups.ts's deleteGroup reassigns them to a "미분류" group first
+  -- (find-or-create), so this FK should never actually block a delete in
+  -- practice — it's a safety net if that reassignment is ever skipped.
+  group_id uuid not null references asset_groups(id) on delete restrict,
   ticker text,
   name text not null default '새 종목',
   target_pct_in_group numeric not null default 0 check (target_pct_in_group between 0 and 100),
@@ -203,3 +207,13 @@ alter table executions drop column if exists applied_fee_rate;
 alter table executions drop column if exists applied_tax_rate;
 alter table executions drop column if exists cost_overridden;
 drop table if exists account_fee_rates;
+
+-- ---------------------------------------------------------------------------
+-- Migration: 자산군 삭제가 하위 종목을 지우지 않도록 변경. 종목은
+-- lib/api/groups.ts의 deleteGroup이 삭제 전에 "미분류" 자산군으로 재배정한다
+-- — 이 FK는 그 재배정이 어떤 이유로든 빠졌을 때 삭제 자체를 막는 안전장치다.
+-- Idempotent — 제약을 지우고 다시 만들 뿐이라 여러 번 실행해도 안전하다.
+-- ---------------------------------------------------------------------------
+alter table holdings drop constraint if exists holdings_group_id_fkey;
+alter table holdings add constraint holdings_group_id_fkey
+  foreign key (group_id) references asset_groups(id) on delete restrict;

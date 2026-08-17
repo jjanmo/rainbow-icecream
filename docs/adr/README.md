@@ -40,6 +40,7 @@
 | [0032](./0032-soft-delete-and-full-replay.md) | 체결 수정·삭제는 soft delete + 해당 종목 전체 리플레이 | Accepted |
 | [0033](./0033-trade-note-capture-in-execution-sheet.md) | 근거·태그를 체결 입력 시트에서 접이식으로, 매도 시 매수 근거 배너 표시 | Accepted |
 | [0034](./0034-remove-fee-tax-modeling.md) | 수수료·증권거래세 계산 제거, 환율만 유지 | Accepted |
+| [0035](./0035-group-delete-reassigns-to-unclassified.md) | 자산군 삭제는 하위 종목을 지우지 않고 "미분류"로 이동 | Accepted |
 
 ## 새 ADR 작성 형식
 
