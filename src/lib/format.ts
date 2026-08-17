@@ -3,7 +3,7 @@ export function fmtWon(n: number | null | undefined): string {
   return "₩" + Math.round(n).toLocaleString("ko-KR");
 }
 
-export function fmtPct(n: number | null | undefined, digits = 1): string {
+export function fmtPct(n: number | null | undefined, digits = 2): string {
   if (n == null || Number.isNaN(n)) return "0%";
   return n.toFixed(digits) + "%";
 }

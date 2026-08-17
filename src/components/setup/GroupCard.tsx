@@ -16,7 +16,7 @@ export function GroupCard({ group }: { group: GroupCalc }) {
       >
         <div className="size-3.5 shrink-0 rounded-full" style={{ background: group.color }} />
         <span className="flex-1 text-[15px] font-semibold">{group.name}</span>
-        <span className="shrink-0 text-[11px] text-muted-foreground">전체의 {fmtPct(group.targetPct, 0)}</span>
+        <span className="shrink-0 text-[11px] text-muted-foreground">전체의 {fmtPct(group.targetPct)}</span>
         <ChevronDown
           className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`}
         />

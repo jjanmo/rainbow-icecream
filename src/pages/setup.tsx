@@ -171,7 +171,7 @@ export default function SetupPage() {
               </div>
               {draftTargetSumOverLimit && (
                 <span className="text-[11px] text-destructive">
-                  자산군 목표 비중 합계가 {fmtPct(draftTargetSum, 0)}로 100%를 초과했습니다
+                  자산군 목표 비중 합계가 {fmtPct(draftTargetSum)}로 100%를 초과했습니다
                 </span>
               )}
             </div>

@@ -38,6 +38,7 @@ App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/li
 - Delete unused generated files outright (e.g. shadcn components that end up unused) rather than leaving dead code or stripped-down stubs.
 - Title-weight text (page `<h1>`s, group/item names, nav logo) uses `font-semibold`, not `font-bold`.
 - "On target" / success states use the app's mint `GOOD_COLOR` (exported from `lib/calc/rebalance.ts`), not a generic green — keep this the one semantic "good" color across pages.
+- `fmtPct` (`lib/format.ts`) defaults to 2 decimal digits — don't pass a lower `digits` override for allocation %, it rounds small values down to a misleading "0%".
 
 ## Lint / build discipline
 - React purity ESLint rules (`react-hooks/set-state-in-effect`, `react-hooks/purity`, `react-hooks/immutability`) are enforced strictly: no mutating a local variable across a `.map`/loop during render (use `reduce`/derive per-item instead), no synchronous `setState` in an effect body (only from subscription/interval callbacks), no impure calls (`Date.now()`, `crypto.randomUUID()` outside event handlers, etc.) during render.
