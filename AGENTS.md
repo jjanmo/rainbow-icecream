@@ -60,6 +60,7 @@ App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/li
 - `fmtPct` and `fmtSigned` (`lib/format.ts`) both default to 2 decimal digits — don't pass a lower `digits` override anywhere, it rounds small values down to a misleading "0%"/"+0%".
 - `Checkbox` (`components/ui/checkbox.tsx`, base-nova/Base UI) is available — added when `HoldingFormDialog` needed a KRW/$ toggle.
 - `Popover` (`components/ui/popover.tsx`, base-nova/Base UI) is available — added for the `?` criteria explainer on `/rebalance`'s 리밸런싱 column header. It's click-to-toggle (not hover) and portals out of the table's `overflow-x-auto` wrapper, so it isn't clipped. Prefer it over a hand-rolled absolute-positioned box.
+- `AllocationDonutChart` (`components/shared/AllocationDonutChart.tsx`) takes optional `activeId`/`onActiveIdChange` props for controlled hover state — omit both for standalone use (internal state), or lift the state to a parent so two charts sharing the same slice `id`s (e.g. `/setup`'s 목표/실제 donuts, both keyed by group id) highlight in sync when either is hovered.
 
 ## Lint / build discipline
 - React purity ESLint rules (`react-hooks/set-state-in-effect`, `react-hooks/purity`, `react-hooks/immutability`) are enforced strictly: no mutating a local variable across a `.map`/loop during render (use `reduce`/derive per-item instead), no synchronous `setState` in an effect body (only from subscription/interval callbacks), no impure calls (`Date.now()`, `crypto.randomUUID()` outside event handlers, etc.) during render.

@@ -48,6 +48,7 @@ export default function SetupPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [draftGroups, setDraftGroups] = useState<DraftGroup[]>([]);
   const [draftHoldings, setDraftHoldings] = useState<DraftHolding[]>([]);
+  const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
 
   const targetSumOk = data ? Math.abs(data.targetSum - 100) < 0.5 : true;
   const draftTargetSum = draftGroups.reduce((sum, g) => sum + g.targetPct, 0);
@@ -297,6 +298,8 @@ export default function SetupPage() {
                 color: g.color,
                 valueLabel: fmtPct(g.targetPct),
               }))}
+              activeId={hoveredGroupId}
+              onActiveIdChange={setHoveredGroupId}
             />
             <AllocationDonutChart
               title={
@@ -317,6 +320,8 @@ export default function SetupPage() {
                 color: g.color,
                 valueLabel: fmtPct(g.actualPct),
               }))}
+              activeId={hoveredGroupId}
+              onActiveIdChange={setHoveredGroupId}
             />
           </div>
 
