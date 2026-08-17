@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { AllocationDonutChart } from '@/components/rebalance/AllocationDonutChart';
+import { AllocationDonutChart } from '@/components/shared/AllocationDonutChart';
 import { GroupProgressBar } from '@/components/rebalance/GroupProgressBar';
 import { RebalanceTable } from '@/components/rebalance/RebalanceTable';
 import { StatCards } from '@/components/rebalance/StatCards';

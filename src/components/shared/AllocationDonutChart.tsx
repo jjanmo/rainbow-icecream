@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 
 export interface DonutSlice {
@@ -14,7 +14,7 @@ export function AllocationDonutChart({
   centerLabel,
   data,
 }: {
-  title: string;
+  title: ReactNode;
   centerLabel: string;
   data: DonutSlice[];
 }) {
@@ -30,7 +30,7 @@ export function AllocationDonutChart({
 
   return (
     <div className="flex min-w-80 flex-1 flex-col gap-4 rounded-lg border border-border bg-card p-5">
-      <div className="text-[13px] font-semibold">{title}</div>
+      <div className="flex flex-wrap items-center gap-2 text-[13px] font-semibold">{title}</div>
       <div className="flex flex-wrap items-center justify-center gap-6">
         <div className="relative size-45 shrink-0">
           <ResponsiveContainer width="100%" height="100%">

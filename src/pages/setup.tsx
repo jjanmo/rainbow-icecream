@@ -2,10 +2,10 @@ import { useState } from "react";
 import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { toast } from "sonner";
-import { AllocationBar } from "@/components/setup/AllocationBar";
 import { EditGroupCard } from "@/components/setup/EditGroupCard";
 import { GroupCard } from "@/components/setup/GroupCard";
 import { HoldingFormDialog } from "@/components/holdings/HoldingFormDialog";
+import { AllocationDonutChart } from "@/components/shared/AllocationDonutChart";
 import { DataErrorNotice } from "@/components/shared/DataErrorNotice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -237,30 +237,51 @@ export default function SetupPage() {
         </>
       ) : (
         <>
-          <div className="mb-6 rounded-lg border border-border bg-card px-5 py-4">
-            <div className="mb-1.5 flex items-center gap-2">
-              <span className="text-[12.5px] text-muted-foreground">목표 배분 (자산군)</span>
-              {targetSumOk ? (
-                <Badge className="bg-accent text-accent-foreground">정상</Badge>
-              ) : (
-                <Badge variant="destructive">
-                  {data.targetSum > 100
-                    ? `100%보다 ${fmtPct(data.targetSum - 100, 0)} 초과 (${fmtPct(data.targetSum, 0)})`
-                    : `100%까지 ${fmtPct(100 - data.targetSum, 0)} 남음 (${fmtPct(data.targetSum, 0)})`}
-                </Badge>
-              )}
-            </div>
-            <AllocationBar groups={data.groups} widthOf={(g) => g.targetPct} />
-
-            <div className="mb-1.5 mt-4 flex items-center gap-2">
-              <span className="text-[12.5px] text-muted-foreground">실제 보유 비중</span>
-              {data.totalValue > 0 ? (
-                <Badge className="bg-accent text-accent-foreground">총 {fmtWon(data.totalValue)}</Badge>
-              ) : (
-                <Badge variant="destructive">보유 데이터 없음</Badge>
-              )}
-            </div>
-            <AllocationBar groups={data.groups} widthOf={(g) => g.actualPct} />
+          <div className="mb-6 flex flex-wrap gap-4">
+            <AllocationDonutChart
+              title={
+                <>
+                  <span>목표 배분 (자산군)</span>
+                  {targetSumOk ? (
+                    <Badge className="bg-accent text-accent-foreground">정상</Badge>
+                  ) : (
+                    <Badge variant="destructive">
+                      {data.targetSum > 100
+                        ? `100%보다 ${fmtPct(data.targetSum - 100)} 초과 (${fmtPct(data.targetSum)})`
+                        : `100%까지 ${fmtPct(100 - data.targetSum)} 남음 (${fmtPct(data.targetSum)})`}
+                    </Badge>
+                  )}
+                </>
+              }
+              centerLabel="목표"
+              data={data.groups.map((g) => ({
+                id: g.id,
+                name: g.name,
+                value: g.targetPct,
+                color: g.color,
+                valueLabel: fmtPct(g.targetPct),
+              }))}
+            />
+            <AllocationDonutChart
+              title={
+                <>
+                  <span>실제 보유 비중</span>
+                  {data.totalValue > 0 ? (
+                    <Badge className="bg-accent text-accent-foreground">총 {fmtWon(data.totalValue)}</Badge>
+                  ) : (
+                    <Badge variant="destructive">보유 데이터 없음</Badge>
+                  )}
+                </>
+              }
+              centerLabel="실제"
+              data={data.groups.map((g) => ({
+                id: g.id,
+                name: g.name,
+                value: g.actualPct,
+                color: g.color,
+                valueLabel: fmtPct(g.actualPct),
+              }))}
+            />
           </div>
 
           {data.groups.map((group) => (

@@ -25,6 +25,7 @@
 | [0017](./0017-group-cards-collapse-by-default.md) | 자산군 카드 기본 접힘, 클릭해야 종목 목록 노출 | Accepted |
 | [0018](./0018-remove-in-group-weight-from-setup-ui.md) | 설정 페이지 UI에서 그룹 내 비중 편집/표시 제거 | Accepted |
 | [0019](./0019-group-dnd-and-derived-color.md) | 자산군 드래그 재정렬 + 위치 기반 자동 색상 (수동 색상 설정 제거) | Accepted |
+| [0020](./0020-setup-donut-chart.md) | 설정 페이지 상단을 바 차트에서 도넛 차트로 교체 | Accepted |
 
 ## 새 ADR 작성 형식
 
