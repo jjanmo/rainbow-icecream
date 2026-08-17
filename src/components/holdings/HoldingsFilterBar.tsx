@@ -71,6 +71,12 @@ export function HoldingsFilterBar({
   return (
     <div className="mb-3.5 flex flex-wrap gap-3">
       <FilterSelect
+        label="구분"
+        value={filter.region}
+        items={regionItems}
+        onChange={(region) => onChange({ ...filter, region: region as Region | "all" })}
+      />
+      <FilterSelect
         label="자산군"
         value={filter.groupId}
         items={groupItems}
@@ -81,12 +87,6 @@ export function HoldingsFilterBar({
         value={filter.account}
         items={accountItems}
         onChange={(account) => onChange({ ...filter, account })}
-      />
-      <FilterSelect
-        label="구분"
-        value={filter.region}
-        items={regionItems}
-        onChange={(region) => onChange({ ...filter, region: region as Region | "all" })}
       />
     </div>
   );
