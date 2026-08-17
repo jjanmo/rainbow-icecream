@@ -51,7 +51,7 @@ export default function SetupPage() {
 
   const targetSumOk = data ? Math.abs(data.targetSum - 100) < 0.5 : true;
   const draftTargetSum = draftGroups.reduce((sum, g) => sum + g.targetPct, 0);
-  const draftTargetSumOverLimit = draftTargetSum > 100;
+  const draftTargetSumInvalid = Math.abs(draftTargetSum - 100) >= 0.5;
 
   function startEditing() {
     if (!data) return;
@@ -198,15 +198,18 @@ export default function SetupPage() {
                 <Button
                   type="button"
                   onClick={finishEditing}
-                  disabled={isSaving || draftTargetSumOverLimit}
-                  title={draftTargetSumOverLimit ? "자산군 목표 비중 합계가 100%를 넘으면 완료할 수 없습니다" : undefined}
+                  disabled={isSaving || draftTargetSumInvalid}
+                  title={draftTargetSumInvalid ? "자산군 목표 비중 합계가 100%가 아니면 완료할 수 없습니다" : undefined}
                 >
                   {isSaving ? "저장 중..." : "완료"}
                 </Button>
               </div>
-              {draftTargetSumOverLimit && (
+              {draftTargetSumInvalid && (
                 <span className="text-[11px] text-destructive">
-                  자산군 목표 비중 합계가 {fmtPct(draftTargetSum)}로 100%를 초과했습니다
+                  자산군 목표 비중 합계가 {fmtPct(draftTargetSum)}로{" "}
+                  {draftTargetSum > 100
+                    ? `100%보다 ${fmtPct(draftTargetSum - 100)} 초과했습니다`
+                    : `100%까지 ${fmtPct(100 - draftTargetSum)} 부족합니다`}
                 </span>
               )}
             </div>
