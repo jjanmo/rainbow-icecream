@@ -9,8 +9,10 @@ import { useExchangeRate, DEFAULT_USD_KRW_RATE } from '@/hooks/useExchangeRate';
 import { useAddExecution, useDeleteExecution, useExecutions } from '@/hooks/useExecutions';
 import { useGroups } from '@/hooks/useGroups';
 import { useAddHolding, useHoldings } from '@/hooks/useHoldings';
+import { useTradeNotes, useUpsertTradeNote } from '@/hooks/useTradeNotes';
 import { currencyOf } from '@/lib/journal/cost';
 import { OversoldError } from '@/lib/journal/commit';
+import { executionNoteKey, positionNoteKey } from '@/lib/journal/noteTarget';
 import { fmtQty, fmtUsd, fmtWon } from '@/lib/format';
 import { INTENT_LABELS, type Execution } from '@/types/journal';
 import type { Holding } from '@/types/domain';
@@ -32,10 +34,12 @@ export default function JournalPage() {
   const groupsQuery = useGroups();
   const holdingsQuery = useHoldings();
   const executionsQuery = useExecutions();
+  const tradeNotesQuery = useTradeNotes();
   const fxQuery = useExchangeRate();
   const addExecution = useAddExecution();
   const deleteExecution = useDeleteExecution();
   const addHolding = useAddHolding();
+  const upsertTradeNote = useUpsertTradeNote();
 
   const now = new Date();
   const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() });
@@ -44,6 +48,12 @@ export default function JournalPage() {
 
   const holdings = useMemo(() => holdingsQuery.data ?? [], [holdingsQuery.data]);
   const holdingById = useMemo(() => new Map(holdings.map((h) => [h.id, h])), [holdings]);
+  const tradeNotes = useMemo(() => tradeNotesQuery.data ?? [], [tradeNotesQuery.data]);
+  // 셋업 태그 자동완성 후보 — holdings.tsx의 accountOptions와 같은 파생 패턴.
+  const setupTagSuggestions = useMemo(
+    () => [...new Set(tradeNotes.flatMap((n) => n.setupTags))].sort(),
+    [tradeNotes],
+  );
 
   const executionsByDay = useMemo(() => {
     const map = new Map<string, Execution[]>();
@@ -78,9 +88,10 @@ export default function JournalPage() {
     ];
   }, [cursor]);
 
-  const isLoading = groupsQuery.isLoading || holdingsQuery.isLoading || executionsQuery.isLoading;
-  const isError = groupsQuery.isError || holdingsQuery.isError || executionsQuery.isError;
-  const error = groupsQuery.error ?? holdingsQuery.error ?? executionsQuery.error;
+  const isLoading =
+    groupsQuery.isLoading || holdingsQuery.isLoading || executionsQuery.isLoading || tradeNotesQuery.isLoading;
+  const isError = groupsQuery.isError || holdingsQuery.isError || executionsQuery.isError || tradeNotesQuery.isError;
+  const error = groupsQuery.error ?? holdingsQuery.error ?? executionsQuery.error ?? tradeNotesQuery.error;
 
   const dayList = selectedDay ? (executionsByDay.get(selectedDay) ?? []) : [];
 
@@ -93,13 +104,15 @@ export default function JournalPage() {
   }
 
   async function handleSubmit(submit: ExecutionSubmit) {
+    let holding: Holding;
+    let execution: Execution;
     try {
       // 새 종목이면 수량 0으로 먼저 만들고, 이어지는 체결이 보유를 채운다.
-      const holding = submit.holding ?? (await addHolding.mutateAsync(submit.newHolding!));
-      await addExecution.mutateAsync({
+      holding = submit.holding ?? (await addHolding.mutateAsync(submit.newHolding!));
+      ({ execution } = await addExecution.mutateAsync({
         holding,
         execution: { ...submit.execution, holdingId: holding.id },
-      });
+      }));
       toast.success('체결을 기록했습니다. 보유 현황이 갱신됩니다.');
     } catch (err) {
       if (err instanceof OversoldError) {
@@ -108,6 +121,19 @@ export default function JournalPage() {
       }
       console.error('Failed to save execution', err);
       toast.error('체결 저장에 실패했습니다.');
+      return;
+    }
+
+    // 체결은 이미 저장됐으므로, 근거 저장이 실패해도 롤백하지 않고 별도로 알린다.
+    if (submit.note) {
+      const targetKey =
+        submit.note.targetType === 'POSITION' ? positionNoteKey(holding.id) : executionNoteKey(execution.id);
+      try {
+        await upsertTradeNote.mutateAsync({ ...submit.note, targetKey });
+      } catch (err) {
+        console.error('Failed to save trade note', err);
+        toast.error('체결은 저장됐지만 근거 저장에 실패했습니다.');
+      }
     }
   }
 
@@ -224,6 +250,8 @@ export default function JournalPage() {
         holdings={holdings}
         groupOptions={(groupsQuery.data ?? []).map((g) => ({ id: g.id, name: g.name }))}
         defaultFxRate={fxQuery.data?.rate ?? DEFAULT_USD_KRW_RATE}
+        tradeNotes={tradeNotes}
+        setupTagSuggestions={setupTagSuggestions}
         onSubmit={handleSubmit}
       />
     </div>

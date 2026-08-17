@@ -38,6 +38,7 @@
 | [0030](./0030-number-with-rounding-guard.md) | 금액은 number 유지 + 반올림 경계에서 표현 오차 봉쇄 | Accepted |
 | [0031](./0031-structured-tags-and-separated-notes.md) | 정성 데이터는 구조화 태그 우선, 노트는 체결과 분리 | Accepted |
 | [0032](./0032-soft-delete-and-full-replay.md) | 체결 수정·삭제는 soft delete + 해당 종목 전체 리플레이 | Accepted |
+| [0033](./0033-trade-note-capture-in-execution-sheet.md) | 근거·태그를 체결 입력 시트에서 접이식으로, 매도 시 매수 근거 배너 표시 | Accepted |
 
 ## 새 ADR 작성 형식
 

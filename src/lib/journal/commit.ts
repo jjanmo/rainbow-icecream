@@ -8,7 +8,7 @@ import {
 } from "@/lib/api/executions";
 import { updateHolding } from "@/lib/api/holdings";
 import type { Holding } from "@/types/domain";
-import type { AccountFeeRates, NewExecution } from "@/types/journal";
+import type { AccountFeeRates, Execution, NewExecution } from "@/types/journal";
 import { defaultMarketFor } from "./marketMeta";
 import { replayHolding, type ReplayContext, type ReplayResult } from "./replay";
 
@@ -61,16 +61,20 @@ export async function replayAndPersistHolding(
  * Supabase 는 클라이언트에서 닿는 크로스 테이블 트랜잭션이 없다. 중간 실패 시
  * 체결은 남고 보유는 갱신되지 않을 수 있으므로, 실패하면 **직전에 넣은 체결을
  * 되돌린다**(soft delete). 그래야 다음 리플레이가 오염된 상태를 물려받지 않는다.
+ *
+ * 생성된 체결도 함께 반환한다 — 매도 시 그 체결에 붙는 EXECUTION 노트를 저장하려면
+ * 호출부(journal.tsx)가 새로 생긴 execution.id를 알아야 한다.
  */
 export async function commitNewExecution(
   supabase: SupabaseClient,
   holding: Holding,
   execution: NewExecution,
-): Promise<ReplayResult> {
+): Promise<{ execution: Execution; replay: ReplayResult }> {
   const rates = await fetchAccountFeeRates(supabase);
   const inserted = await insertExecution(supabase, execution);
   try {
-    return await replayAndPersistHolding(supabase, holding, rates);
+    const replay = await replayAndPersistHolding(supabase, holding, rates);
+    return { execution: inserted, replay };
   } catch (err) {
     await softDeleteExecution(supabase, inserted.id).catch(() => {
       // 되돌리기까지 실패하면 원래 오류를 덮지 않는다 — 사용자에게는 원인이 더 중요하다.
