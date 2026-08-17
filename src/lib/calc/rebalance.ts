@@ -1,18 +1,24 @@
 import type { AssetGroup, Currency, Holding, LivePriceMap, Region } from "@/types/domain";
 import { colorFor, FLAVOR_HEXES, hueForGroupIndex, tintForIndex } from "./color";
 
-/** Diff (percentage points) below which a holding/group is considered "on target". */
+/** Diff (percentage points) below which an asset group is considered "on target". */
 export const REBALANCE_THRESHOLD = 5;
 
 export const GOOD_COLOR = FLAVOR_HEXES[1]; // 민트
 const OVER_TARGET_COLOR = "oklch(58% 0.13 75)"; // sell needed
 const UNDER_TARGET_COLOR = "oklch(55% 0.16 25)"; // buy needed
 
+/**
+ * Note there is deliberately no per-holding target/diff/actionAmount here:
+ * targets are only set at the asset-group level (there's no UI for a
+ * holding's in-group target anymore), so comparing an individual holding
+ * against a target would be comparing against a number nobody set. All
+ * rebalance judgement happens on GroupCalc — see ADR-0024.
+ */
 export interface HoldingCalc extends Holding {
   color: string;
   groupName: string;
   groupColor: string;
-  indexInGroup: number;
   /** Price in the holding's native currency (KRW domestic, USD overseas). Falls
    * back to avgPrice (already in the holding's native currency) when no live
    * price is available. */
@@ -26,14 +32,9 @@ export interface HoldingCalc extends Holding {
   value: number;
   /** qty * priceNative — informational only, shown for 해외 holdings. */
   valueNative: number;
-  /** % of the whole portfolio this holding should target (group.targetPct * targetPctInGroup / 100). */
-  targetPct: number;
   /** % of the whole portfolio this holding actually is, by current market value (KRW). */
   actualPct: number;
   actualPctInGroup: number;
-  diff: number;
-  /** Positive = sell this much, negative = buy this much (KRW), to reach target. */
-  actionAmount: number;
   returnPct: number;
 }
 
@@ -44,16 +45,14 @@ export interface GroupCalc extends AssetGroup {
   value: number;
   actualPct: number;
   diff: number;
-  memberTargetSum: number;
-  memberTargetSumWarn: boolean;
+  /** Positive = sell this much, negative = buy this much (KRW), to reach target. */
+  actionAmount: number;
 }
 
 export interface RebalanceResult {
+  /** Display order (sort_order, created_at, id) — same as /setup shows. */
   groups: GroupCalc[];
-  /** Stable order (created_at, id) — safe to derive indexInGroup-style state from. */
   holdings: HoldingCalc[];
-  /** Same holdings, sorted by |diff| descending. */
-  rebalanceRows: HoldingCalc[];
   totalValue: number;
   targetSum: number;
 }
@@ -127,12 +126,6 @@ export function computeRebalance({
   const groupIndexById = new Map(sortedGroups.map((g, i) => [g.id, i]));
 
   const holdingsStable = [...holdings].sort(byOrderThenCreatedThenId);
-  const groupMemberIds = new Map<string, string[]>();
-  holdingsStable.forEach((h) => {
-    const arr = groupMemberIds.get(h.groupId) ?? [];
-    arr.push(h.id);
-    groupMemberIds.set(h.groupId, arr);
-  });
 
   // A holding's color index is pinned to creation order, never display order,
   // so drag-reordering on /setup doesn't repaint it (or its neighbours) — a
@@ -168,17 +161,11 @@ export function computeRebalance({
     const group = groupById.get(h.groupId);
     const groupIndex = groupIndexById.get(h.groupId) ?? 0;
     const hue = hueForGroupIndex(groupIndex, sortedGroups.length);
-    const memberIds = groupMemberIds.get(h.groupId) ?? [h.id];
-    const indexInGroup = memberIds.indexOf(h.id);
     const colorSlot = colorSlotById.get(h.id) ?? { index: 0, total: 1 };
     const { priceNative, nativeCurrency, priceKrw, value, valueNative, hasLivePrice } = resolvedPrices.get(h.id)!;
-    const groupTargetPct = group?.targetPct ?? 0;
-    const targetPct = (groupTargetPct * h.targetPctInGroup) / 100;
     const actualPct = totalValue > 0 ? (value / totalValue) * 100 : 0;
     const gValue = groupValue.get(h.groupId) ?? 0;
     const actualPctInGroup = gValue > 0 ? (value / gValue) * 100 : 0;
-    const diff = actualPct - targetPct;
-    const actionAmount = (targetPct / 100) * totalValue - value;
     // Compared in the holding's own native currency (not priceKrw) so a
     // 해외 holding's return isn't distorted by FX movement since purchase —
     // avgPrice and priceNative are always in the same currency (see above).
@@ -189,18 +176,14 @@ export function computeRebalance({
       color: tintForIndex(hue, colorSlot.index, colorSlot.total),
       groupName: group?.name ?? "미분류",
       groupColor: group ? colorFor(hue, 0) : "oklch(70% 0 0)",
-      indexInGroup,
       priceNative,
       nativeCurrency,
       priceKrw,
       hasLivePrice,
       value,
       valueNative,
-      targetPct,
       actualPct,
       actualPctInGroup,
-      diff,
-      actionAmount,
       returnPct,
     };
   });
@@ -217,7 +200,6 @@ export function computeRebalance({
     const hue = hueForGroupIndex(index, sortedGroups.length);
     const actualPct = members.reduce((sum, h) => sum + h.actualPct, 0);
     const value = members.reduce((sum, h) => sum + h.value, 0);
-    const memberTargetSum = members.reduce((sum, h) => sum + h.targetPctInGroup, 0);
 
     return {
       ...g,
@@ -227,15 +209,13 @@ export function computeRebalance({
       value,
       actualPct,
       diff: actualPct - g.targetPct,
-      memberTargetSum,
-      memberTargetSumWarn: members.length > 0 && Math.abs(memberTargetSum - 100) > 0.5,
+      actionAmount: (g.targetPct / 100) * totalValue - value,
     };
   });
 
   const targetSum = sortedGroups.reduce((sum, g) => sum + g.targetPct, 0);
-  const rebalanceRows = [...holdingsCalc].sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
-  return { groups: groupsCalc, holdings: holdingsCalc, rebalanceRows, totalValue, targetSum };
+  return { groups: groupsCalc, holdings: holdingsCalc, totalValue, targetSum };
 }
 
 export function diffColor(diff: number): string {
