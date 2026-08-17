@@ -1,17 +1,13 @@
 import type { Region } from "@/types/domain";
-import type { AssetType, Execution, Market } from "@/types/journal";
-import { computeExecutionCost, currencyOf, isZeroQty, normalizeQty, roundCurrency } from "./cost";
+import type { Execution } from "@/types/journal";
+import { computeExecutionAmount, currencyOf, isZeroQty, normalizeQty, roundCurrency } from "./cost";
 
 /**
- * 리플레이가 필요한 종목의 고정 속성. 체결 자체에는 통화/시장/자산유형을 담지
- * 않고 소속 holding 에서 읽는다 — 같은 종목의 체결이 서로 다른 통화일 수는 없다.
+ * 리플레이가 필요한 종목의 고정 속성. 체결 자체에는 통화를 담지 않고 소속
+ * holding 에서 읽는다 — 같은 종목의 체결이 서로 다른 통화일 수는 없다.
  */
 export interface ReplayContext {
   region: Region;
-  market: Market;
-  assetType: AssetType;
-  domesticFeeRate?: number;
-  overseasFeeRate?: number;
 }
 
 export interface ClosedLot {
@@ -21,7 +17,7 @@ export interface ClosedLot {
   /** 매도 직전 평균매입가 (거래통화). */
   avgEntryPrice: number;
   exitPrice: number;
-  /** 거래통화 기준, 비용 반영 후. */
+  /** 거래통화 기준. */
   realizedPnl: number;
   /** 원화 환산 — 환차손익 포함. */
   realizedPnlKrw: number;
@@ -32,7 +28,7 @@ export interface ClosedLot {
 export interface ReplayResult {
   /** holdings.qty 에 반영할 값. */
   qty: number;
-  /** holdings.avg_price 에 반영할 값 (거래통화, 수수료 포함 취득원가 기준). */
+  /** holdings.avg_price 에 반영할 값 (거래통화). */
   avgPrice: number;
   /** 총 취득원가 (거래통화). qty 가 0이면 반드시 0이다. */
   totalCost: number;
@@ -83,28 +79,14 @@ export function replayHolding(executions: Execution[], ctx: ReplayContext): Repl
   const oversold: ReplayResult["oversold"] = [];
 
   for (const e of ordered) {
-    const cost = computeExecutionCost({
-      side: e.side,
-      qty: e.qty,
-      price: e.price,
-      region: ctx.region,
-      market: ctx.market,
-      assetType: ctx.assetType,
-      executedAt: e.executedAt,
-      domesticFeeRate: ctx.domesticFeeRate,
-      overseasFeeRate: ctx.overseasFeeRate,
-    });
-    // 사용자가 손으로 덮어쓴 체결은 그 값을 그대로 쓴다 (증권사 청구액과 맞추려는
-    // 의도적 수정이므로 재계산이 이겨서는 안 된다).
-    const feeAmount = e.costOverridden ? e.feeAmount : cost.feeAmount;
-    const taxAmount = e.costOverridden ? e.taxAmount : cost.taxAmount;
+    const amount = computeExecutionAmount({ side: e.side, qty: e.qty, price: e.price, region: ctx.region });
     const execQty = normalizeQty(e.qty);
 
     if (e.side === "BUY") {
       if (isZeroQty(qty)) openedAt = e.executedAt;
       qty = normalizeQty(qty + execQty);
-      totalCost += cost.grossAmount + feeAmount;
-      totalCostKrw += (cost.grossAmount + feeAmount) * e.fxRate;
+      totalCost += amount.grossAmount;
+      totalCostKrw += amount.grossAmount * e.fxRate;
       continue;
     }
 
@@ -118,7 +100,7 @@ export function replayHolding(executions: Execution[], ctx: ReplayContext): Repl
     const avgPriceKrw = isZeroQty(qty) ? 0 : totalCostKrw / qty;
     const costOut = avgPrice * execQty;
     const costOutKrw = avgPriceKrw * execQty;
-    const proceeds = cost.grossAmount - feeAmount - taxAmount;
+    const proceeds = amount.grossAmount;
     const proceedsKrw = proceeds * e.fxRate;
 
     qty = normalizeQty(qty - execQty);

@@ -1,14 +1,14 @@
 /**
- * 매매일지 계산 검증 — 원본 설계 문서 §8 인수 기준(Acceptance Criteria)을 그대로 옮긴 것.
+ * 매매일지 계산 검증 — 리플레이(lib/journal/replay.ts) 핵심 시나리오.
  *
  *   npx tsx --tsconfig tsconfig.json scripts/verify-journal.ts
  *
  * 아직 테스트 러너가 아니라 실행 스크립트다(프로젝트에 러너가 없다). vitest 등을
  * 도입하면 이 파일을 그대로 테스트로 승격할 것.
  *
- * 여기서 실제로 잡은 버그: 수수료 절사 방향(105원→104원), 보유일수 계산(달력 기준).
+ * 수수료·증권거래세 계산은 ADR-0034로 제거했다 — 이 스크립트도 그 요율표
+ * 시나리오(ETF 면세, 요율 소급 등)를 함께 걷어냈다.
  */
-import { computeExecutionCost } from "@/lib/journal/cost";
 import { replayHolding } from "@/lib/journal/replay";
 import type { Execution } from "@/types/journal";
 
@@ -21,51 +21,33 @@ function eq(label: string, got: unknown, want: unknown) {
 const ex = (o: Partial<Execution>): Execution => ({
   id: o.id ?? "e", userId: "u", holdingId: "h", side: o.side ?? "BUY", intent: o.intent ?? "NEW",
   executedAt: o.executedAt ?? "2026-08-17T00:32:00Z", qty: o.qty ?? 0, price: o.price ?? 0,
-  fxRate: o.fxRate ?? 1, feeAmount: 0, taxAmount: 0, appliedFeeRate: 0, appliedTaxRate: 0,
-  costOverridden: false, createdAt: "2026-08-17T00:00:00Z",
+  fxRate: o.fxRate ?? 1, createdAt: "2026-08-17T00:00:00Z",
 });
 
 console.log("Scenario 1 — 국내 개별주 매수");
-const s1 = replayHolding([ex({ id: "1", side: "BUY", qty: 10, price: 70000 })],
-  { region: "국내", market: "KOSPI", assetType: "STOCK" });
+const s1 = replayHolding([ex({ id: "1", side: "BUY", qty: 10, price: 70000 })], { region: "국내" });
 eq("보유수량", s1.qty, 10);
-eq("totalCost", s1.totalCost, 700105);
-eq("avgPrice", s1.avgPrice, 70010.5);
+eq("totalCost", s1.totalCost, 700000);
+eq("avgPrice", s1.avgPrice, 70000);
 
-console.log("Scenario 2 — 국내 개별주 매도 (증권거래세 부과)");
-const sell = computeExecutionCost({ side: "SELL", qty: 10, price: 75000, region: "국내",
-  market: "KOSPI", assetType: "STOCK", executedAt: "2026-08-20T00:00:00Z" });
-eq("appliedTaxRate", sell.appliedTaxRate, 0.002);
-eq("taxAmount", sell.taxAmount, 1500);
-eq("feeAmount", sell.feeAmount, 112);
+console.log("Scenario 2 — 국내 개별주 매도 (실현손익)");
 const s2 = replayHolding([
   ex({ id: "1", side: "BUY", qty: 10, price: 70000, executedAt: "2026-08-17T00:32:00Z" }),
   ex({ id: "2", side: "SELL", qty: 10, price: 75000, executedAt: "2026-08-20T00:00:00Z" }),
-], { region: "국내", market: "KOSPI", assetType: "STOCK" });
-eq("realizedPnl", s2.closedLots[0].realizedPnl, 48283);
+], { region: "국내" });
+eq("realizedPnl", s2.closedLots[0].realizedPnl, 50000);
 eq("보유수량 0", s2.qty, 0);
 eq("totalCost 0", s2.totalCost, 0);
 eq("전량청산", s2.closedLots[0].isFullExit, true);
 eq("보유일수", s2.closedLots[0].holdingDays, 3);
 
-console.log("Scenario 3 — 국내 ETF 매도 (증권거래세 면제)");
-const etf = computeExecutionCost({ side: "SELL", qty: 10, price: 21450, region: "국내",
-  market: "KOSPI", assetType: "ETF", executedAt: "2026-08-20T00:00:00Z" });
-eq("appliedTaxRate", etf.appliedTaxRate, 0);
-eq("taxAmount", etf.taxAmount, 0);
-
-console.log("Scenario 4 — 과거 요율 소급");
-const past = computeExecutionCost({ side: "SELL", qty: 10, price: 70000, region: "국내",
-  market: "KOSPI", assetType: "STOCK", executedAt: "2025-06-01T00:00:00Z" });
-eq("appliedTaxRate", past.appliedTaxRate, 0.0015);
-
 console.log("Scenario 5 — 해외 주식 환차손익 분해");
 const s5 = replayHolding([
   ex({ id: "1", side: "BUY", qty: 10, price: 100, fxRate: 1300, executedAt: "2026-01-01T00:00:00Z" }),
-  ex({ id: "2", side: "SELL", qty: 10, price: 100, fxRate: 1400, executedAt: "2026-02-01T00:00:00Z" }),
-], { region: "해외", market: "NASDAQ", assetType: "STOCK" });
+  ex({ id: "2", side: "SELL", qty: 10, price: 98, fxRate: 1400, executedAt: "2026-02-01T00:00:00Z" }),
+], { region: "해외" });
 const lot = s5.closedLots[0];
-eq("USD 손익은 비용만큼 음수", lot.realizedPnl < 0, true);
+eq("USD 손익은 주가 하락만큼 음수", lot.realizedPnl < 0, true);
 eq("KRW 손익은 환차익으로 양수", lot.realizedPnlKrw > 0, true);
 
 console.log("Scenario 7 — 소수점 매매 후 전량 매도");
@@ -73,7 +55,7 @@ const s7 = replayHolding([
   ex({ id: "1", side: "BUY", qty: 0.1, price: 100, fxRate: 1400 }),
   ex({ id: "2", side: "BUY", qty: 0.2, price: 100, fxRate: 1400 }),
   ex({ id: "3", side: "SELL", qty: 0.3, price: 100, fxRate: 1400, executedAt: "2026-09-01T00:00:00Z" }),
-], { region: "해외", market: "NASDAQ", assetType: "STOCK" });
+], { region: "해외" });
 eq("잔여 수량 정확히 0", s7.qty, 0);
 eq("잔여 원가 정확히 0", s7.totalCost, 0);
 
@@ -81,7 +63,7 @@ console.log("보유 초과 매도 차단");
 const over = replayHolding([
   ex({ id: "1", side: "BUY", qty: 5, price: 100 }),
   ex({ id: "2", side: "SELL", qty: 10, price: 100, executedAt: "2026-09-01T00:00:00Z" }),
-], { region: "국내", market: "KOSPI", assetType: "STOCK" });
+], { region: "국내" });
 eq("oversold 감지", over.oversold.length, 1);
 eq("수량 보존", over.qty, 5);
 
@@ -91,7 +73,7 @@ const all = [
   ex({ id: "2", side: "BUY", qty: 4, price: 70300, executedAt: "2026-08-15T00:00:00Z" }),
   ex({ id: "3", side: "SELL", qty: 10, price: 75000, executedAt: "2026-08-17T00:00:00Z" }),
 ];
-const ctx = { region: "국내" as const, market: "KOSPI" as const, assetType: "STOCK" as const };
+const ctx = { region: "국내" as const };
 eq("정렬 순서 무관", JSON.stringify(replayHolding([...all].reverse(), ctx)), JSON.stringify(replayHolding(all, ctx)));
 
 console.log(`\n  ${pass} passed, ${fail} failed`);

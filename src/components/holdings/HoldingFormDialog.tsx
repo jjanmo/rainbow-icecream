@@ -6,8 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { NewHolding, Region } from '@/types/domain';
-import type { AssetType, Market } from '@/types/journal';
-import { ASSET_TYPES, ASSET_TYPE_LABELS, defaultMarketFor, marketsFor } from '@/lib/journal/marketMeta';
 
 // qty/avgPrice are edited as free-form text (not `type="number"`) and only
 // parsed to numbers on submit — a controlled number input whose value starts
@@ -22,8 +20,6 @@ const EMPTY_DRAFT: Draft = {
   targetPctInGroup: 0,
   account: '일반계좌',
   region: '국내',
-  market: 'KOSPI',
-  assetType: 'STOCK',
   memo: '',
   sortOrder: 0,
 };
@@ -43,8 +39,6 @@ function toDraft(holding: NewHolding): Draft {
     targetPctInGroup: holding.targetPctInGroup,
     account: holding.account ?? '',
     region: holding.region,
-    market: holding.market ?? defaultMarketFor(holding.region),
-    assetType: holding.assetType,
     memo: holding.memo ?? '',
     sortOrder: holding.sortOrder,
   };
@@ -112,8 +106,7 @@ export function HoldingFormDialog({
   function selectCashCurrency(region: Region, checked: boolean) {
     if (checked) {
       setIsCash(true);
-      // 현금성 자산은 시세 조회도, 증권거래세도 대상이 아니다.
-      setDraft((d) => ({ ...d, region, assetType: 'CASH', market: defaultMarketFor(region) }));
+      setDraft((d) => ({ ...d, region }));
     } else {
       setIsCash(false);
     }
@@ -169,18 +162,7 @@ export function HoldingFormDialog({
               <Select
                 items={REGION_ITEMS}
                 value={draft.region}
-                onValueChange={(v) =>
-                  v &&
-                  setDraft((d) => {
-                    const region = v as Region;
-                    // 시장은 구분에 종속된다 — 국내로 바꿨는데 NASDAQ이 남아있으면
-                    // 증권거래세가 0으로 계산된다.
-                    const market = marketsFor(region).includes(d.market as Market)
-                      ? d.market
-                      : defaultMarketFor(region);
-                    return { ...d, region, market };
-                  })
-                }
+                onValueChange={(v) => v && setDraft((d) => ({ ...d, region: v as Region }))}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -207,49 +189,6 @@ export function HoldingFormDialog({
                   {ACCOUNT_TYPES.map((type) => (
                     <SelectItem key={type} value={type}>
                       {type}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* 시장·자산유형은 증권거래세 계산에 필요하다 — 특히 국내 ETF는 매도 시
-              면세라서 자산유형을 모르면 세금이 과다 계산된다 (ADR-0028). */}
-          <div className="flex gap-2.5">
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label>시장</Label>
-              <Select
-                items={marketsFor(draft.region).map((m) => ({ label: m, value: m }))}
-                value={draft.market ?? defaultMarketFor(draft.region)}
-                onValueChange={(v) => v && setDraft((d) => ({ ...d, market: v as Market }))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {marketsFor(draft.region).map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label>자산유형</Label>
-              <Select
-                items={ASSET_TYPES.map((t) => ({ label: ASSET_TYPE_LABELS[t], value: t }))}
-                value={draft.assetType}
-                onValueChange={(v) => v && setDraft((d) => ({ ...d, assetType: v as AssetType }))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ASSET_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {ASSET_TYPE_LABELS[t]}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -8,8 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { TagInput } from '@/components/journal/TagInput';
 import { cn } from '@/lib/utils';
-import { computeExecutionCost, currencyOf, normalizeQty } from '@/lib/journal/cost';
-import { ASSET_TYPE_LABELS, ASSET_TYPES, defaultMarketFor, marketsFor } from '@/lib/journal/marketMeta';
+import { computeExecutionAmount, currencyOf, normalizeQty } from '@/lib/journal/cost';
 import { fmtQty, fmtUsd, fmtWon } from '@/lib/format';
 import type { Holding, NewHolding, Region } from '@/types/domain';
 import {
@@ -18,10 +17,8 @@ import {
   EXIT_REASON_LABELS,
   INTENT_LABELS,
   SELL_INTENTS,
-  type AssetType,
   type ExecutionIntent,
   type ExitReason,
-  type Market,
   type NewExecution,
   type NoteTargetType,
   type Side,
@@ -56,8 +53,6 @@ interface NewHoldingDraft {
   ticker: string;
   name: string;
   region: Region;
-  market: Market;
-  assetType: AssetType;
   account: string;
 }
 
@@ -76,7 +71,8 @@ export interface ExecutionSubmit {
  * 이하로 유지한다 — 근거 섹션은 기본 접힘 상태의 선택 입력이라, 채우지 않아도
  * 저장할 수 있다. 입력 마찰이 커지면 기록 자체를 안 하게 된다.
  *
- * 수수료·증권거래세는 입력받지 않고 실시간으로 계산해 보여준다 (ADR-0028).
+ * 수수료·증권거래세는 계산하지 않는다 — 증권사·이벤트 할인율마다 달라 정밀
+ * 계산의 실익이 낮다고 판단해 뺐다 (ADR-0034).
  */
 export function ExecutionFormDialog({
   open,
@@ -113,8 +109,6 @@ export function ExecutionFormDialog({
     ticker: '',
     name: '',
     region: '국내',
-    market: 'KOSPI',
-    assetType: 'STOCK',
     account: '일반계좌',
   });
   const [noteOpen, setNoteOpen] = useState(false);
@@ -148,8 +142,6 @@ export function ExecutionFormDialog({
         ticker: '',
         name: '',
         region: '국내',
-        market: 'KOSPI',
-        assetType: 'STOCK',
         account: '일반계좌',
       });
       setNoteOpen(false);
@@ -171,10 +163,6 @@ export function ExecutionFormDialog({
       ? tradeNotes.find((n) => n.targetType === 'POSITION' && n.targetKey === selected.id)
       : undefined;
   const region: Region = isNewHolding ? newHolding.region : (selected?.region ?? '국내');
-  const market: Market = isNewHolding
-    ? newHolding.market
-    : (selected?.market ?? defaultMarketFor(region));
-  const assetType: AssetType = isNewHolding ? newHolding.assetType : (selected?.assetType ?? 'STOCK');
   const currency = currencyOf(region);
   const isOverseas = region === '해외';
 
@@ -183,10 +171,7 @@ export function ExecutionFormDialog({
   const fxRate = isOverseas ? parseFloat(fxRateText) || 0 : 1;
   const executedAt = executedAtLocal ? new Date(executedAtLocal).toISOString() : '';
 
-  const cost =
-    qty > 0 && price > 0 && executedAt
-      ? computeExecutionCost({ side, qty, price, region, market, assetType, executedAt })
-      : null;
+  const amount = qty > 0 && price > 0 ? computeExecutionAmount({ side, qty, price, region }) : null;
 
   // 매도는 보유 수량을 넘을 수 없다 — 저장 후 리플레이에서 거부되므로 여기서 먼저 막는다.
   const available = selected?.qty ?? 0;
@@ -245,7 +230,7 @@ export function ExecutionFormDialog({
   }
 
   function handleSubmit() {
-    if (!canSubmit || !cost) return;
+    if (!canSubmit || !amount) return;
     const execution: Omit<NewExecution, 'holdingId'> = {
       side,
       intent: resolvedIntent,
@@ -253,11 +238,6 @@ export function ExecutionFormDialog({
       qty,
       price,
       fxRate,
-      feeAmount: cost.feeAmount,
-      taxAmount: cost.taxAmount,
-      appliedFeeRate: cost.appliedFeeRate,
-      appliedTaxRate: cost.appliedTaxRate,
-      costOverridden: false,
     };
     const note = buildNoteDraft();
     if (isNewHolding) {
@@ -272,8 +252,6 @@ export function ExecutionFormDialog({
           avgPrice: 0,
           account: newHolding.account,
           region: newHolding.region,
-          market: newHolding.market,
-          assetType: newHolding.assetType,
           memo: null,
           sortOrder: 0,
         },
@@ -367,13 +345,7 @@ export function ExecutionFormDialog({
                         { label: '해외', value: '해외' },
                       ]}
                       value={newHolding.region}
-                      onValueChange={(v) =>
-                        v &&
-                        setNewHolding((d) => {
-                          const r = v as Region;
-                          return { ...d, region: r, market: defaultMarketFor(r) };
-                        })
-                      }
+                      onValueChange={(v) => v && setNewHolding((d) => ({ ...d, region: v as Region }))}
                     >
                       <SelectTrigger className="h-8 w-full text-xs">
                         <SelectValue />
@@ -406,44 +378,6 @@ export function ExecutionFormDialog({
                   </div>
                 </div>
                 <div className="flex gap-2.5">
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Label className="text-[11px]">시장</Label>
-                    <Select
-                      items={marketsFor(newHolding.region).map((m) => ({ label: m, value: m }))}
-                      value={newHolding.market}
-                      onValueChange={(v) => v && setNewHolding((d) => ({ ...d, market: v as Market }))}
-                    >
-                      <SelectTrigger className="h-8 w-full text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {marketsFor(newHolding.region).map((m) => (
-                          <SelectItem key={m} value={m}>
-                            {m}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Label className="text-[11px]">자산유형</Label>
-                    <Select
-                      items={ASSET_TYPES.map((t) => ({ label: ASSET_TYPE_LABELS[t], value: t }))}
-                      value={newHolding.assetType}
-                      onValueChange={(v) => v && setNewHolding((d) => ({ ...d, assetType: v as AssetType }))}
-                    >
-                      <SelectTrigger className="h-8 w-full text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ASSET_TYPES.map((t) => (
-                          <SelectItem key={t} value={t}>
-                            {ASSET_TYPE_LABELS[t]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                   <div className="flex flex-1 flex-col gap-1.5">
                     <Label className="text-[11px]">계좌</Label>
                     <Select
@@ -736,28 +670,15 @@ export function ExecutionFormDialog({
           </div>
 
           {/* 계산 결과를 입력 중에 보여준다 — 오타를 즉시 발견하게 하는 장치다. */}
-          {cost && (
+          {amount && (
             <div className="flex flex-col gap-1 rounded-lg border border-border bg-muted/40 p-2.5 text-xs">
-              <div className="mb-0.5 font-semibold">예상 비용</div>
-              <Row label="거래금액" value={fmtNative(cost.grossAmount)} />
               <Row
-                label={`위탁수수료 (${(cost.appliedFeeRate * 100).toFixed(3)}%)`}
-                value={fmtNative(cost.feeAmount)}
+                label={side === 'BUY' ? '총 매수금액' : '총 매도금액'}
+                value={fmtNative(Math.abs(amount.netCashFlow))}
+                strong
               />
-              <Row
-                label="증권거래세"
-                value={fmtNative(cost.taxAmount)}
-                hint={cost.appliedTaxRate === 0 ? cost.taxReason : `${(cost.appliedTaxRate * 100).toFixed(2)}%`}
-              />
-              <div className="mt-1 border-t border-border pt-1">
-                <Row
-                  label={side === 'BUY' ? '총 매수금액' : '실수령액'}
-                  value={fmtNative(Math.abs(cost.netCashFlow))}
-                  strong
-                />
-              </div>
               {isOverseas && (
-                <Row label="원화 환산" value={fmtWon(Math.abs(cost.netCashFlow) * fxRate)} />
+                <Row label="원화 환산" value={fmtWon(Math.abs(amount.netCashFlow) * fxRate)} />
               )}
             </div>
           )}

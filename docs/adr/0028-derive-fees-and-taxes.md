@@ -1,7 +1,7 @@
 # ADR-0028: 수수료·증권거래세는 입력받지 않고 계산하되, 결과는 체결 행에 스냅샷으로 저장한다
 
 ## Status
-Accepted
+Superseded by ADR-0034
 
 ## Context
 

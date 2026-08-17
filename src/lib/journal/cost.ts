@@ -1,10 +1,5 @@
 import type { Currency, Region } from "@/types/domain";
-import type { AssetType, Market, Side } from "@/types/journal";
-import { resolveTaxRate } from "./taxRate";
-
-/** 계좌별 요율이 등록되지 않았을 때 쓰는 기본 위탁수수료율. */
-export const DEFAULT_DOMESTIC_FEE_RATE = 0.00015; // 0.015%
-export const DEFAULT_OVERSEAS_FEE_RATE = 0.0007; // 0.07%
+import type { Side } from "@/types/journal";
 
 /**
  * 수량 정규화 — 소수점 거래 때문에 `0.1 + 0.2` 류의 잔여가 남으면 "보유 종목
@@ -25,14 +20,13 @@ export function isZeroQty(qty: number): boolean {
 }
 
 /**
- * 통화별 반올림을 한 곳에 모은다. KRW 는 원 미만 절사(위탁수수료·증권거래세 모두
- * 통상 절사), USD 는 소수 둘째 자리 반올림.
+ * 통화별 반올림을 한 곳에 모은다. KRW 는 원 미만 절사, USD 는 소수 둘째 자리 반올림.
  *
- * **절사 전에 반드시 정규화한다.** `700000 * 0.00015` 는 IEEE754 에서
- * `104.99999999999999` 이고, 그대로 `Math.floor` 하면 수수료가 105원이 아니라
- * 104원이 되어 취득원가가 1원 어긋난다(실제로 검증 시나리오에서 잡혔다).
- * 유효자리보다 훨씬 아래인 6자리에서 한 번 접어 표현 오차만 걷어낸다 —
- * Decimal 라이브러리를 들이지 않기로 한 결정(ADR-0030)의 대가를 여기서 지불한다.
+ * **절사 전에 반드시 정규화한다.** IEEE754 표현 오차 때문에 곱셈 결과가
+ * `104.99999999999999` 처럼 나올 수 있고, 그대로 `Math.floor` 하면 취득원가가
+ * 원 단위로 어긋난다(실제로 검증 시나리오에서 잡혔다). 유효자리보다 훨씬 아래인
+ * 6자리에서 한 번 접어 표현 오차만 걷어낸다 — Decimal 라이브러리를 들이지 않기로
+ * 한 결정(ADR-0030)의 대가를 여기서 지불한다.
  */
 const ROUNDING_GUARD_DIGITS = 6;
 
@@ -47,67 +41,31 @@ export function currencyOf(region: Region): Currency {
   return region === "해외" ? "USD" : "KRW";
 }
 
-export interface ExecutionCostInput {
+export interface ExecutionAmountInput {
   side: Side;
   qty: number;
   /** 종목의 원래 통화 기준 단가. */
   price: number;
   region: Region;
-  market: Market;
-  assetType: AssetType;
-  /** ISO8601 */
-  executedAt: string;
-  domesticFeeRate?: number;
-  overseasFeeRate?: number;
 }
 
-export interface ExecutionCost {
+export interface ExecutionAmount {
   /** 거래통화 기준 거래금액 (qty × price). */
   grossAmount: number;
-  feeAmount: number;
-  taxAmount: number;
-  appliedFeeRate: number;
-  appliedTaxRate: number;
-  taxReason: string;
   /** 매수는 음수(현금 유출), 매도는 양수. 거래통화 기준. */
   netCashFlow: number;
   currency: Currency;
 }
 
 /**
- * 사용자는 수수료·세금을 입력하지 않는다. 요율 × 거래금액으로 계산한다 (ADR-0028).
- * 반드시 이 순서대로 — 반올림 시점이 바뀌면 증권사 청구액과 원 단위로 어긋난다.
+ * 수수료·증권거래세는 계산하지 않는다 — 증권사·이벤트 할인율마다 달라 정밀 계산의
+ * 실익이 낮다고 판단해 뺐다 (ADR-0034). 거래금액(qty × price)만 반올림 경계를
+ * 거쳐 계산한다.
  */
-export function computeExecutionCost(input: ExecutionCostInput): ExecutionCost {
+export function computeExecutionAmount(input: ExecutionAmountInput): ExecutionAmount {
   const currency = currencyOf(input.region);
   const qty = normalizeQty(input.qty);
   const grossAmount = roundCurrency(qty * input.price, currency);
-
-  const appliedFeeRate =
-    currency === "KRW"
-      ? (input.domesticFeeRate ?? DEFAULT_DOMESTIC_FEE_RATE)
-      : (input.overseasFeeRate ?? DEFAULT_OVERSEAS_FEE_RATE);
-  const feeAmount = roundCurrency(grossAmount * appliedFeeRate, currency);
-
-  const tax = resolveTaxRate({
-    market: input.market,
-    assetType: input.assetType,
-    side: input.side,
-    executedAt: input.executedAt,
-  });
-  const taxAmount = roundCurrency(grossAmount * tax.rate, currency);
-
-  const netCashFlow =
-    input.side === "BUY" ? -(grossAmount + feeAmount) : grossAmount - feeAmount - taxAmount;
-
-  return {
-    grossAmount,
-    feeAmount,
-    taxAmount,
-    appliedFeeRate,
-    appliedTaxRate: tax.rate,
-    taxReason: tax.reason,
-    netCashFlow,
-    currency,
-  };
+  const netCashFlow = input.side === "BUY" ? -grossAmount : grossAmount;
+  return { grossAmount, netCashFlow, currency };
 }
