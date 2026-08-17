@@ -30,19 +30,14 @@ function NeedsRebalanceList({ items }: { items: RebalanceItemSummary[] }) {
 }
 
 export function StatCards({
-  totalValueFmt,
   needsRebalanceHoldings,
   needsRebalanceGroups,
 }: {
-  totalValueFmt: string;
   needsRebalanceHoldings: RebalanceItemSummary[];
   needsRebalanceGroups: RebalanceItemSummary[];
 }) {
   return (
     <div className="mb-5 flex flex-wrap gap-4">
-      <StatCard label="총 평가금액">
-        <div className="font-mono text-xl font-semibold">{totalValueFmt}</div>
-      </StatCard>
       <StatCard label="리밸런싱 필요 종목">
         <div className="font-mono text-xl font-semibold">{needsRebalanceHoldings.length}개</div>
         <NeedsRebalanceList items={needsRebalanceHoldings} />
