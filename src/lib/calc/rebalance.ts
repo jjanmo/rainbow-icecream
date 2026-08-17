@@ -1,4 +1,4 @@
-import type { AssetGroup, Currency, Holding, LivePriceMap } from "@/types/domain";
+import type { AssetGroup, Currency, Holding, LivePriceMap, Region } from "@/types/domain";
 import { colorFor, FLAVOR_HEXES, hueForGroupIndex, tintForIndex } from "./color";
 
 /** Diff (percentage points) below which a holding/group is considered "on target". */
@@ -67,6 +67,42 @@ export interface ComputeRebalanceInput {
   usdKrwRate: number;
 }
 
+export interface ResolvedHoldingValue {
+  priceNative: number;
+  nativeCurrency: Currency;
+  priceKrw: number;
+  hasLivePrice: boolean;
+  value: number;
+  valueNative: number;
+}
+
+/**
+ * Resolves a holding's live price/valuation — the same fallback rules
+ * computeRebalance uses internally (no live quote falls back to avgPrice,
+ * already in the holding's own native currency), exposed standalone so
+ * un-saved draft holdings on /setup can show a live 평가금 without needing
+ * a full Holding row (see EditHoldingInlineRow).
+ */
+export function resolveHoldingValueKrw(
+  holding: { ticker: string | null; region: Region; avgPrice: number; qty: number },
+  prices: LivePriceMap,
+  usdKrwRate: number,
+): ResolvedHoldingValue {
+  const live = holding.ticker ? prices[holding.ticker] : undefined;
+  const avgPriceCurrency: Currency = holding.region === "해외" ? "USD" : "KRW";
+  const priceNative = live?.price ?? holding.avgPrice;
+  const nativeCurrency: Currency = live?.currency ?? avgPriceCurrency;
+  const priceKrw = nativeCurrency === "USD" ? priceNative * usdKrwRate : priceNative;
+  return {
+    priceNative,
+    nativeCurrency,
+    priceKrw,
+    hasLivePrice: live !== undefined,
+    value: holding.qty * priceKrw,
+    valueNative: holding.qty * priceNative,
+  };
+}
+
 function byCreatedThenId<T extends { createdAt: string; id: string }>(a: T, b: T) {
   const t = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   if (t !== 0) return t;
@@ -101,28 +137,17 @@ export function computeRebalance({
   // Resolve native/KRW price up front per holding — no live quote (no ticker,
   // or Toss lookup failed) falls back to avgPrice, already in the holding's
   // own native currency (KRW for 국내, USD for 해외).
-  const resolvedPrices = new Map<
-    string,
-    { priceNative: number; nativeCurrency: Currency; priceKrw: number; hasLivePrice: boolean }
-  >();
+  const resolvedPrices = new Map<string, ResolvedHoldingValue>();
   holdingsStable.forEach((h) => {
-    const live = h.ticker ? prices[h.ticker] : undefined;
-    const avgPriceCurrency: Currency = h.region === "해외" ? "USD" : "KRW";
-    const priceNative = live?.price ?? h.avgPrice;
-    const nativeCurrency: Currency = live?.currency ?? avgPriceCurrency;
-    const priceKrw = nativeCurrency === "USD" ? priceNative * usdKrwRate : priceNative;
-    resolvedPrices.set(h.id, { priceNative, nativeCurrency, priceKrw, hasLivePrice: live !== undefined });
+    resolvedPrices.set(h.id, resolveHoldingValueKrw(h, prices, usdKrwRate));
   });
 
-  const totalValue = holdingsStable.reduce(
-    (sum, h) => sum + h.qty * (resolvedPrices.get(h.id)?.priceKrw ?? 0),
-    0,
-  );
+  const totalValue = holdingsStable.reduce((sum, h) => sum + (resolvedPrices.get(h.id)?.value ?? 0), 0);
 
   const groupValue = new Map<string, number>();
   holdingsStable.forEach((h) => {
-    const priceKrw = resolvedPrices.get(h.id)?.priceKrw ?? 0;
-    groupValue.set(h.groupId, (groupValue.get(h.groupId) ?? 0) + h.qty * priceKrw);
+    const value = resolvedPrices.get(h.id)?.value ?? 0;
+    groupValue.set(h.groupId, (groupValue.get(h.groupId) ?? 0) + value);
   });
 
   const holdingsCalc: HoldingCalc[] = holdingsStable.map((h) => {
@@ -131,9 +156,7 @@ export function computeRebalance({
     const hue = hueForGroupIndex(groupIndex, sortedGroups.length);
     const memberIds = groupMemberIds.get(h.groupId) ?? [h.id];
     const indexInGroup = memberIds.indexOf(h.id);
-    const { priceNative, nativeCurrency, priceKrw, hasLivePrice } = resolvedPrices.get(h.id)!;
-    const value = h.qty * priceKrw;
-    const valueNative = h.qty * priceNative;
+    const { priceNative, nativeCurrency, priceKrw, value, valueNative, hasLivePrice } = resolvedPrices.get(h.id)!;
     const groupTargetPct = group?.targetPct ?? 0;
     const targetPct = (groupTargetPct * h.targetPctInGroup) / 100;
     const actualPct = totalValue > 0 ? (value / totalValue) * 100 : 0;

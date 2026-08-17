@@ -21,7 +21,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEditableField, useEditableNumberField } from '@/hooks/useEditableField';
 import { tintForIndex } from '@/lib/calc/color';
+import { resolveHoldingValueKrw } from '@/lib/calc/rebalance';
 import type { DraftGroup, DraftHolding } from '@/lib/setupDraft';
+import type { LivePriceMap } from '@/types/domain';
 import { EditHoldingInlineRow } from './EditHoldingInlineRow';
 
 export function EditGroupCard({
@@ -30,6 +32,8 @@ export function EditGroupCard({
   hue,
   holdings,
   groupOptions,
+  prices,
+  usdKrwRate,
   onUpdate,
   onDelete,
   onAddHolding,
@@ -45,6 +49,9 @@ export function EditGroupCard({
   /** This group's holdings, already sorted by sortOrder. */
   holdings: DraftHolding[];
   groupOptions: { id: string; name: string }[];
+  /** For resolving each draft holding's live 평가금 — see resolveHoldingValueKrw. */
+  prices: LivePriceMap;
+  usdKrwRate: number;
   onUpdate: (patch: Partial<Pick<DraftGroup, 'name' | 'targetPct'>>) => void;
   onDelete: () => void;
   onAddHolding: () => void;
@@ -135,16 +142,21 @@ export function EditGroupCard({
         <>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={holdings.map((h) => h.clientKey)} strategy={verticalListSortingStrategy}>
-              {holdings.map((holding, index) => (
-                <EditHoldingInlineRow
-                  key={holding.clientKey}
-                  holding={holding}
-                  color={tintForIndex(hue, index, holdings.length)}
-                  groupOptions={groupOptions}
-                  onUpdate={(patch) => onUpdateHolding(holding.clientKey, patch)}
-                  onDelete={() => onDeleteHolding(holding.clientKey)}
-                />
-              ))}
+              {holdings.map((holding, index) => {
+                const resolved = resolveHoldingValueKrw(holding, prices, usdKrwRate);
+                return (
+                  <EditHoldingInlineRow
+                    key={holding.clientKey}
+                    holding={holding}
+                    color={tintForIndex(hue, index, holdings.length)}
+                    value={resolved.value}
+                    valueNative={resolved.valueNative}
+                    groupOptions={groupOptions}
+                    onUpdate={(patch) => onUpdateHolding(holding.clientKey, patch)}
+                    onDelete={() => onDeleteHolding(holding.clientKey)}
+                  />
+                );
+              })}
             </SortableContext>
           </DndContext>
 

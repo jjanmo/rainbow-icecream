@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEditableField, useEditableNumberField } from "@/hooks/useEditableField";
+import { fmtQty, fmtUsd, fmtWon } from "@/lib/format";
 import type { DraftHolding } from "@/lib/setupDraft";
 import type { Region } from "@/types/domain";
 
@@ -24,12 +25,19 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 export function EditHoldingInlineRow({
   holding,
   color,
+  value,
+  valueNative,
   groupOptions,
   onUpdate,
   onDelete,
 }: {
   holding: DraftHolding;
   color: string;
+  /** Live KRW valuation (qty × current/avgPrice-fallback price) — resolved by
+   * the parent via lib/calc/rebalance.ts resolveHoldingValueKrw, since draft
+   * holdings aren't run through computeRebalance. */
+  value: number;
+  valueNative: number;
   groupOptions: { id: string; name: string }[];
   onUpdate: (patch: Partial<DraftHolding>) => void;
   onDelete: () => void;
@@ -69,6 +77,14 @@ export function EditHoldingInlineRow({
           <span className="shrink-0 font-mono text-xs text-muted-foreground">{holding.ticker}</span>
         )}
         <span className="flex-1 text-xs">{holding.name}</span>
+        {!expanded && (
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {holding.region} · {holding.account || "-"} · {fmtQty(holding.qty)} ·{" "}
+            {holding.region === "해외" ? fmtUsd(holding.avgPrice) : fmtWon(holding.avgPrice)} ·{" "}
+            {fmtWon(value)}
+            {holding.region === "해외" && <span> ({fmtUsd(valueNative)})</span>}
+          </span>
+        )}
         <Button
           type="button"
           variant="ghost"

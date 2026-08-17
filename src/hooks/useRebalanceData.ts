@@ -28,6 +28,11 @@ export function useRebalanceData() {
 
   return {
     data: result,
+    // Exposed so callers can resolve a live valuation for data that hasn't
+    // gone through computeRebalance yet — e.g. /setup's unsaved draft
+    // holdings (see lib/calc/rebalance.ts resolveHoldingValueKrw).
+    prices: pricesQuery.data ?? {},
+    usdKrwRate: fxQuery.data?.rate ?? DEFAULT_USD_KRW_RATE,
     // Price/FX loading or errors degrade gracefully (avgPrice fallback) rather
     // than blocking the page — only groups/holdings failures are fatal.
     isLoading: groupsQuery.isLoading || holdingsQuery.isLoading,

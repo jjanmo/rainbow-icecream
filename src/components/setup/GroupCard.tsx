@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { fmtPct } from '@/lib/format';
 import type { GroupCalc } from '@/lib/calc/rebalance';
-import { HoldingInlineRow } from './HoldingInlineRow';
+import { GroupHoldingsPanel } from './GroupHoldingsPanel';
 
 export function GroupCard({ group }: { group: GroupCalc }) {
   const [expanded, setExpanded] = useState(false);
@@ -22,7 +22,7 @@ export function GroupCard({ group }: { group: GroupCalc }) {
         />
       </button>
 
-      {expanded && group.members.map((holding) => <HoldingInlineRow key={holding.id} holding={holding} />)}
+      {expanded && <GroupHoldingsPanel holdings={group.members} />}
     </div>
   );
 }

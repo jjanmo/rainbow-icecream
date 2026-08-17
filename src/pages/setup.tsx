@@ -29,7 +29,7 @@ import {
 import type { NewHolding } from "@/types/domain";
 
 export default function SetupPage() {
-  const { data, isLoading, isError, error } = useRebalanceData();
+  const { data, prices, usdKrwRate, isLoading, isError, error } = useRebalanceData();
   const addGroup = useAddGroup();
   const updateGroup = useUpdateGroup();
   const deleteGroup = useDeleteGroup();
@@ -207,6 +207,8 @@ export default function SetupPage() {
                     .filter((h) => h.groupClientKey === group.clientKey)
                     .sort((a, b) => a.sortOrder - b.sortOrder)}
                   groupOptions={sortedDraftGroups.map((g) => ({ id: g.clientKey, name: g.name }))}
+                  prices={prices}
+                  usdKrwRate={usdKrwRate}
                   onUpdate={(patch) => updateDraftGroup(group.clientKey, patch)}
                   onDelete={() => deleteDraftGroup(group.clientKey)}
                   onAddHolding={() => setAddingToGroupKey(group.clientKey)}
