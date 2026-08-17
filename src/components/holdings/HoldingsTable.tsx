@@ -5,14 +5,14 @@ import { HoldingsTableRow } from './HoldingsTableRow';
 
 export const COLUMNS = [
   { key: 'name', label: '종목', width: 170, align: 'left' as const },
-  { key: 'group', label: '자산군', width: 90, align: 'left' as const },
+  { key: 'group', label: '자산군', width: 120, align: 'left' as const },
   { key: 'accountRegion', label: '계좌·구분', width: 90, align: 'left' as const },
   { key: 'qty', label: '수량', width: 70, align: 'right' as const },
   { key: 'avgPrice', label: '평균매입가', width: 90, align: 'right' as const },
   { key: 'price', label: '현재가', width: 100, align: 'right' as const },
   { key: 'value', label: '평가금액', width: 100, align: 'right' as const },
   { key: 'return', label: '수익률', width: 70, align: 'right' as const },
-  { key: 'memo', label: '비고', width: 180, align: 'left' as const },
+  { key: 'memo', label: '비고', width: 160, align: 'left' as const },
   { key: 'actions', label: '', width: 70, align: 'right' as const },
 ];
 
