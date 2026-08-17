@@ -27,6 +27,7 @@
 | [0019](./0019-group-dnd-and-derived-color.md) | 자산군 드래그 재정렬 + 위치 기반 자동 색상 (수동 색상 설정 제거) | Accepted |
 | [0020](./0020-setup-donut-chart.md) | 설정 페이지 상단을 바 차트에서 도넛 차트로 교체 | Accepted |
 | [0021](./0021-setup-holding-panels.md) | 설정 페이지 종목 표시 — 읽기 2컬럼 파이+리스트, 편집 접힌 줄 요약 | Accepted |
+| [0022](./0022-cash-like-holding-entry.md) | 종목 모달에 원화/달러 체크박스로 현금성 자산 등록 경로 복구 | Accepted |
 
 ## 새 ADR 작성 형식
 
