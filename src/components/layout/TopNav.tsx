@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: '/setup', label: '포트폴리오 설정' },
   { href: '/rebalance', label: '비중 체크' },
   { href: '/holdings', label: '보유 종목' },
+  { href: '/journal', label: '매매일지' },
 ] as const;
 
 export function TopNav() {
