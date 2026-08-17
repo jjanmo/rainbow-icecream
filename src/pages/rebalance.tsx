@@ -9,16 +9,17 @@ import { REBALANCE_THRESHOLD } from '@/lib/calc/rebalance';
 export default function RebalancePage() {
   const { data, isLoading, isError, error } = useRebalanceData();
 
-  // Sorted by how far off target each group is — the most urgent one first.
-  const rows = useMemo(
-    () => (data ? [...data.groups].sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)) : []),
-    [data],
-  );
+  // Biggest target allocation first — the table reads as the portfolio's
+  // intended shape, so the rows stay put as market values move around.
+  const rows = useMemo(() => (data ? [...data.groups].sort((a, b) => b.targetPct - a.targetPct) : []), [data]);
 
+  // The summary card is a triage list, not the portfolio's shape — keep it
+  // ordered by how far off target each group is.
   const needsRebalance = useMemo(
     () =>
       rows
         .filter((g) => Math.abs(g.diff) >= REBALANCE_THRESHOLD)
+        .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
         .map((g) => ({ name: g.name, diff: g.diff })),
     [rows],
   );

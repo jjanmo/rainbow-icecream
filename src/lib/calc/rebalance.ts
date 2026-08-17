@@ -2,11 +2,22 @@ import type { AssetGroup, Currency, Holding, LivePriceMap, Region } from "@/type
 import { colorFor, FLAVOR_HEXES, hueForGroupIndex, tintForIndex } from "./color";
 
 /** Diff (percentage points) below which an asset group is considered "on target". */
-export const REBALANCE_THRESHOLD = 5;
+export const REBALANCE_THRESHOLD = 10;
 
 export const GOOD_COLOR = FLAVOR_HEXES[1]; // 민트
-const OVER_TARGET_COLOR = "oklch(58% 0.13 75)"; // sell needed
-const UNDER_TARGET_COLOR = "oklch(55% 0.16 25)"; // buy needed
+
+// Signed percentage-point diffs follow the Korean market convention users
+// already read every day in their brokerage app: plus is red, minus is blue.
+// (The inverse of the US green-up/red-down scheme — don't "fix" it.) The actual
+// values are theme-aware CSS variables, defined in styles/globals.css: one
+// fixed pair can't stay legible on both the near-white and the dark card.
+const RISE_COLOR = "var(--diff-rise)"; // + : 실제가 목표보다 높음 → 매도 필요
+const FALL_COLOR = "var(--diff-fall)"; // − : 실제가 목표보다 낮음 → 매수 필요
+const RISE_STRONG_COLOR = "var(--diff-rise-strong)";
+const FALL_STRONG_COLOR = "var(--diff-fall-strong)";
+
+/** Loss red for 수익률 only — see returnColor. */
+const LOSS_COLOR = "oklch(55% 0.16 25)";
 
 /**
  * Note there is deliberately no per-holding target/diff/actionAmount here:
@@ -218,9 +229,28 @@ export function computeRebalance({
   return { groups: groupsCalc, holdings: holdingsCalc, totalValue, targetSum };
 }
 
+/**
+ * Colors a signed diff by its sign alone — deliberately independent of
+ * REBALANCE_THRESHOLD. A +3%p drift is still a rise even when it needs no
+ * action, so the number keeps the rise/fall meaning it has everywhere else;
+ * whether action is needed is expressed by actionColor/actionLabel instead.
+ */
 export function diffColor(diff: number): string {
-  if (Math.abs(diff) < REBALANCE_THRESHOLD) return GOOD_COLOR;
-  return diff > 0 ? OVER_TARGET_COLOR : UNDER_TARGET_COLOR;
+  if (diff === 0) return "var(--muted-foreground)";
+  return diff > 0 ? RISE_COLOR : FALL_COLOR;
+}
+
+/**
+ * Color for the rebalance verdict. Always the same color family as diffColor
+ * for the same diff — only a lightness step apart — so the verdict and the
+ * number it came from read as one signal per row rather than two unrelated
+ * ones. "유지" needs no action, so it drops out of the rise/fall scale entirely
+ * and uses plain body text colour (never the mint GOOD_COLOR, which would put
+ * a third, off-family hue in the row).
+ */
+export function actionColor(diff: number): string {
+  if (Math.abs(diff) < REBALANCE_THRESHOLD) return "var(--foreground)";
+  return diff > 0 ? RISE_STRONG_COLOR : FALL_STRONG_COLOR;
 }
 
 export function actionLabel(diff: number): "유지" | "매도 필요" | "매수 필요" {
@@ -230,6 +260,6 @@ export function actionLabel(diff: number): "유지" | "매도 필요" | "매수 
 
 export function returnColor(returnPct: number): string {
   if (returnPct > 0) return GOOD_COLOR;
-  if (returnPct < 0) return UNDER_TARGET_COLOR;
+  if (returnPct < 0) return LOSS_COLOR;
   return "var(--muted-foreground)";
 }

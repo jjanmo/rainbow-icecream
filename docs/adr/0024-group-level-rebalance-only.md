@@ -22,7 +22,7 @@ ADR-0018에서 "종목이 자산군 내에서 차지할 목표 비중"(`target_p
 - `GroupCalc`가 `diff`와 `actionAmount`(양수=매도, 음수=매수)를 가진다.
 - `HoldingCalc`에서 종목 단위 목표/괴리/조치 필요액(`targetPct`, `diff`, `actionAmount`)을 제거한다. 종목에 남는 지표는 실제 비중(`actualPct`, `actualPctInGroup`)과 수익률뿐 — 전부 "목표 없이도 성립하는" 값이다.
 - 비중 체크 페이지는 자산군 요약 카드 + 자산군 테이블 두 블록으로 구성한다. 종목 단위 목표 비중 진행바(`GroupProgressBar`/`HoldingProgressBar`/`MiniBar`)는 제거한다.
-- `REBALANCE_THRESHOLD`(5%p)는 자산군 괴리에만 적용된다.
+- `REBALANCE_THRESHOLD`는 자산군 괴리에만 적용된다. (기준값은 ADR-0026에서 10%p로 조정)
 
 DB의 `holdings.target_pct_in_group` 컬럼과 도메인 타입/CRUD/draft 필드는 **남겨둔다.** 비중 체크 로직을 앞으로 다시 손볼 예정이므로, 종목 단위 목표 개념을 어떤 형태로든 되살릴 여지를 없애지 않는다. 다만 현재는 화면 어디에서도 읽지 않는 값이라는 점을 분명히 해둔다 — 설정 페이지 아코디언이 보여주는 "자산군 내 비중"은 현재 시세 기준 **실제** 비중(`actualPctInGroup`)이며 이 컬럼과 무관하다.
 

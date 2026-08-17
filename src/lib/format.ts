@@ -20,12 +20,14 @@ export function fmtWon(n: number | null | undefined): string {
 }
 
 export function fmtPct(n: number | null | undefined, digits = 2): string {
-  if (n == null || Number.isNaN(n)) return "0%";
+  if (n == null || Number.isNaN(n)) return (0).toFixed(digits) + "%";
   return n.toFixed(digits) + "%";
 }
 
-export function fmtSigned(n: number | null | undefined, digits = 1): string {
-  if (n == null || Number.isNaN(n)) return "+0%";
+/** Same 2-digit default as fmtPct — a lower override rounds small values down
+ * to a misleading "+0%", so don't pass one. */
+export function fmtSigned(n: number | null | undefined, digits = 2): string {
+  if (n == null || Number.isNaN(n)) return "+" + (0).toFixed(digits) + "%";
   const sign = n > 0 ? "+" : "";
   return sign + n.toFixed(digits) + "%";
 }

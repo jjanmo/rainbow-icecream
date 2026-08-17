@@ -13,7 +13,7 @@
 | [0005](./0005-toss-polling-strategy.md) | Toss 시세 연동 — 1분 폴링 + 적응형 백오프 | Accepted |
 | [0006](./0006-holdings-readonly-modal-edit.md) | 보유 종목 페이지는 읽기 전용 + 모달 편집 | Accepted |
 | [0007](./0007-setup-draft-staging.md) | 포트폴리오 설정 편집은 로컬 초안(draft) 방식 | Accepted |
-| [0008](./0008-rebalance-threshold.md) | 리밸런싱 기준 5%p, 통계 카드는 기준 초과만 표시 | Accepted |
+| [0008](./0008-rebalance-threshold.md) | 리밸런싱 기준 5%p, 통계 카드는 기준 초과만 표시 | Superseded by ADR-0026 |
 | [0009](./0009-controlled-numeric-inputs.md) | 숫자 입력은 문자열 초안 상태로 처리 | Accepted |
 | [0010](./0010-dual-allocation-metrics.md) | 설정 페이지 "목표 배분"/"실제 채워짐" 이중 지표 | Accepted |
 | [0011](./0011-src-directory.md) | 앱 코드를 src/ 디렉토리로 이동 | Accepted |
@@ -29,6 +29,9 @@
 | [0021](./0021-setup-holding-panels.md) | 설정 페이지 종목 표시 — 읽기 2컬럼 파이+리스트, 편집 접힌 줄 요약 | Accepted |
 | [0022](./0022-cash-like-holding-entry.md) | 종목 모달에 원화/달러 체크박스로 현금성 자산 등록 경로 복구 | Accepted |
 | [0023](./0023-rebalance-page-dedup.md) | 비중 체크 페이지에서 설정/보유종목 페이지와 중복되는 내용 제거 | Accepted |
+| [0024](./0024-group-level-rebalance-only.md) | 리밸런싱 판단은 자산군 단위로만 (종목 단위 목표/괴리 제거) | Accepted |
+| [0025](./0025-holding-color-pinned-to-creation-order.md) | 종목 색상은 최초 생성 순서에 고정 (드래그 재정렬과 분리) | Accepted |
+| [0026](./0026-diff-sign-colors-and-threshold-10.md) | 괴리는 상승/하락 색, 조치 여부는 같은 계열 강조 · 기준 10%p · 리밸런싱 상태 컬럼 | Accepted |
 
 ## 새 ADR 작성 형식
 

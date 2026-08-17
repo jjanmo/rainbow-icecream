@@ -1,4 +1,4 @@
-import { diffColor, REBALANCE_THRESHOLD } from '@/lib/calc/rebalance';
+import { actionColor, REBALANCE_THRESHOLD } from '@/lib/calc/rebalance';
 import { fmtSigned } from '@/lib/format';
 
 export interface RebalanceItemSummary {
@@ -18,7 +18,7 @@ export function RebalanceSummaryCard({ items }: { items: RebalanceItemSummary[] 
       {items.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-xs">
           {items.map((item) => (
-            <span key={item.name} style={{ color: diffColor(item.diff) }}>
+            <span key={item.name} style={{ color: actionColor(item.diff) }}>
               {item.name} {fmtSigned(item.diff)}p
             </span>
           ))}
