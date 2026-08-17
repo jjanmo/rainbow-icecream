@@ -40,6 +40,7 @@ App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/li
 - Title-weight text (page `<h1>`s, group/item names, nav logo) uses `font-semibold`, not `font-bold`.
 - "On target" / success states use the app's mint `GOOD_COLOR` (exported from `lib/calc/rebalance.ts`), not a generic green — keep this the one semantic "good" color across pages.
 - `fmtPct` (`lib/format.ts`) defaults to 2 decimal digits — don't pass a lower `digits` override for allocation %, it rounds small values down to a misleading "0%".
+- `shortHoldingLabel` (`lib/format.ts`) is the label for tight spots (the group donut's center readout): ticker for 해외 holdings, plain 종목명 for everything else. Don't try to strip brand prefixes from 국내 names — that was tried and rolled back (names like `KODEX 200` degrade to a bare `200`).
 - `Checkbox` (`components/ui/checkbox.tsx`, base-nova/Base UI) is available — added when `HoldingFormDialog` needed a KRW/$ toggle.
 
 ## Lint / build discipline

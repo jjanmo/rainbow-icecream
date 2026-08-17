@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { colorFor, hueForGroupIndex } from "@/lib/calc/color";
-import { fmtPct, fmtUsd, fmtWon } from "@/lib/format";
+import { fmtPct, fmtUsd, fmtWon, shortHoldingLabel } from "@/lib/format";
 import type { HoldingCalc } from "@/lib/calc/rebalance";
 
 /** Read-mode expanded group panel: a donut of each holding's share within
@@ -19,6 +19,7 @@ export function GroupHoldingsPanel({ holdings }: { holdings: HoldingCalc[] }) {
   const chartData = hasValue
     ? holdings.map((h, i) => ({ id: h.id, value: h.actualPctInGroup, color: distinctColors[i] }))
     : [{ id: "empty", value: 1, color: "var(--muted)" }];
+  const active = holdings.find((h) => h.id === activeId);
 
   function clearIfActive(id: string) {
     setActiveId((current) => (current === id ? null : current));
@@ -51,6 +52,22 @@ export function GroupHoldingsPanel({ holdings }: { holdings: HoldingCalc[] }) {
               </Pie>
             </PieChart>
           </ResponsiveContainer>
+          {/* Center readout, mirroring AllocationDonutChart — driven by the same
+              activeId as the list on the right, so hovering either surface fills it. */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="flex size-18 flex-col items-center justify-center rounded-full bg-card text-center">
+              {active ? (
+                <>
+                  <span className="max-w-15 truncate text-[9.5px] text-muted-foreground">
+                    {shortHoldingLabel(active)}
+                  </span>
+                  <span className="font-mono text-[13px] font-semibold">{fmtPct(active.actualPctInGroup)}</span>
+                </>
+              ) : (
+                <span className="text-[10px] text-muted-foreground">비중</span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
