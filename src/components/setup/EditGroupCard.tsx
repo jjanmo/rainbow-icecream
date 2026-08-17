@@ -1,20 +1,6 @@
 import { useState } from 'react';
-import {
-  closestCenter,
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
+import { useDroppable } from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { ChevronDown, GripVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -26,20 +12,21 @@ import { draftColorSlots, type DraftGroup, type DraftHolding } from '@/lib/setup
 import type { LivePriceMap } from '@/types/domain';
 import { EditHoldingInlineRow } from './EditHoldingInlineRow';
 
+/** 접힌 자산군에도 종목을 드래그해 옮길 수 있어야 하므로, 헤더 자체가 항상
+ * 드롭 대상이다 — 펼쳤을 때는 목록 안 종목들이 더 정밀한 드롭 대상이 된다. */
+export function groupDropId(clientKey: string): string {
+  return `group-drop-${clientKey}`;
+}
+
 export function EditGroupCard({
   group,
   color,
   hue,
   holdings,
-  groupOptions,
   prices,
   usdKrwRate,
   onUpdate,
   onDelete,
-  onAddHolding,
-  onUpdateHolding,
-  onReorderHoldings,
-  onDeleteHolding,
 }: {
   group: DraftGroup;
   /** This group's derived color/hue — computed by the parent from its position
@@ -48,16 +35,11 @@ export function EditGroupCard({
   hue: number;
   /** This group's holdings, already sorted by sortOrder. */
   holdings: DraftHolding[];
-  groupOptions: { id: string; name: string }[];
   /** For resolving each draft holding's live 평가금 — see resolveHoldingValueKrw. */
   prices: LivePriceMap;
   usdKrwRate: number;
   onUpdate: (patch: Partial<Pick<DraftGroup, 'name' | 'targetPct'>>) => void;
   onDelete: () => void;
-  onAddHolding: () => void;
-  onUpdateHolding: (clientKey: string, patch: Partial<DraftHolding>) => void;
-  onReorderHoldings: (groupClientKey: string, orderedClientKeys: string[]) => void;
-  onDeleteHolding: (clientKey: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   // Creation-order color slots, so a holding's tint survives drag-reordering
@@ -68,6 +50,7 @@ export function EditGroupCard({
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: group.clientKey,
+    data: { type: 'group' },
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -75,24 +58,19 @@ export function EditGroupCard({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const clientKeys = holdings.map((h) => h.clientKey);
-    const oldIndex = clientKeys.indexOf(String(active.id));
-    const newIndex = clientKeys.indexOf(String(over.id));
-    if (oldIndex === -1 || newIndex === -1) return;
-    onReorderHoldings(group.clientKey, arrayMove(clientKeys, oldIndex, newIndex));
-  }
+  // 종목 dnd 전용 드롭 대상 — 자산군 간 이동 시 헤더 위로 놓으면(특히 접힌
+  // 상태에서) 이 자산군 맨 뒤로 옮겨진다 (pages/setup.tsx의 handleHoldingDragOver).
+  const { setNodeRef: setHeaderDroppableRef, isOver } = useDroppable({
+    id: groupDropId(group.clientKey),
+    data: { type: 'group-header', groupClientKey: group.clientKey },
+  });
 
   return (
     <div ref={setNodeRef} style={style} className="mb-4 rounded-lg border border-border bg-card p-5 sm:p-6">
-      <div className={`flex flex-wrap items-center gap-2.5 ${expanded ? 'mb-2.5' : ''}`}>
+      <div
+        ref={setHeaderDroppableRef}
+        className={`flex flex-wrap items-center gap-2.5 rounded-md transition-colors ${expanded ? 'mb-2.5' : ''} ${isOver ? 'bg-accent/50' : ''}`}
+      >
         <button
           type="button"
           {...attributes}
@@ -142,35 +120,25 @@ export function EditGroupCard({
       </div>
 
       {expanded && (
-        <>
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={holdings.map((h) => h.clientKey)} strategy={verticalListSortingStrategy}>
-              {holdings.map((holding) => {
-                const resolved = resolveHoldingValueKrw(holding, prices, usdKrwRate);
-                return (
-                  <EditHoldingInlineRow
-                    key={holding.clientKey}
-                    holding={holding}
-                    color={tintForIndex(hue, colorSlots.get(holding.clientKey) ?? 0, holdings.length)}
-                    value={resolved.value}
-                    valueNative={resolved.valueNative}
-                    groupOptions={groupOptions}
-                    onUpdate={(patch) => onUpdateHolding(holding.clientKey, patch)}
-                    onDelete={() => onDeleteHolding(holding.clientKey)}
-                  />
-                );
-              })}
-            </SortableContext>
-          </DndContext>
-
-          <button
-            type="button"
-            onClick={onAddHolding}
-            className="mt-2.5 w-full rounded-lg border-[1.5px] border-dashed border-border py-2.5 text-[13px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
-          >
-            + 종목 추가
-          </button>
-        </>
+        <SortableContext items={holdings.map((h) => h.clientKey)} strategy={verticalListSortingStrategy}>
+          {holdings.map((holding) => {
+            const resolved = resolveHoldingValueKrw(holding, prices, usdKrwRate);
+            return (
+              <EditHoldingInlineRow
+                key={holding.clientKey}
+                holding={holding}
+                color={tintForIndex(hue, colorSlots.get(holding.clientKey) ?? 0, holdings.length)}
+                value={resolved.value}
+                valueNative={resolved.valueNative}
+              />
+            );
+          })}
+          {holdings.length === 0 && (
+            <p className="border-t border-border py-3 text-center text-xs text-muted-foreground">
+              종목이 없습니다 — 다른 자산군에서 드래그해 옮기거나, 보유 종목 화면에서 이 자산군으로 등록하세요.
+            </p>
+          )}
+        </SortableContext>
       )}
     </div>
   );

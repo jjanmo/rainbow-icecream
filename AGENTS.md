@@ -40,6 +40,8 @@ App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/li
 
 ## Setup page edit pattern (draft/staging, not autosave)
 `/setup`'s edit mode is a true local draft: entering edit mode copies server state into `DraftGroup[]`/`DraftHolding[]` (`lib/setupDraft.ts`), and **nothing** touches Supabase until "완료" is clicked (`commitSetupDraft`, which diffs draft vs. original and replays only the changes). "취소" discards the draft with zero server calls — this must cover additions/deletions of groups and holdings too, not just field edits. Don't reintroduce onBlur-autosave on this page.
+- **Holding CRUD lives on `/holdings` only now** (ADR-0036) — `/setup`'s edit mode has no add/edit/delete UI for individual holdings, just group CRUD and drag-and-drop (within-group reorder + cross-group move). `EditHoldingInlineRow` is a read-only summary row; don't add editable fields back to it without checking with the user first.
+- **One shared `DndContext` for both group and holding dragging on `/setup`** (`pages/setup.tsx`) — dnd-kit binds `useSortable`/`useDraggable` to the *nearest* `DndContext`, so nesting a second one (e.g. per-`EditGroupCard`) would wrongly capture the group card's own drag handle too. Distinguish drag kind via `data: { type: 'group' | 'holding' }` passed to `useSortable`, and route in the shared `handleDragEnd`. Multiple `SortableContext`s (one per group, plus one for the group list) can and should nest inside that single `DndContext` — that part is fine to nest.
 
 ## Toss API quirks
 - Every response is wrapped in a `{"result": ...}` envelope — undocumented, only discovered via direct `curl` against the real API. Zod schemas must unwrap `.result`.

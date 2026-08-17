@@ -104,6 +104,25 @@ export function reorderDraftHoldings(
 }
 
 /**
+ * Moves one holding into a different group during a cross-group drag
+ * (ADR-0036), placing it at the end of the target group's list. Used for the
+ * live preview while dragging over another group — `/setup`'s drag-end
+ * handler follows up with `reorderDraftHoldings` for precise final position.
+ */
+export function moveDraftHoldingToGroup(
+  holdings: DraftHolding[],
+  clientKey: string,
+  targetGroupClientKey: string,
+): DraftHolding[] {
+  const maxSortOrder = holdings
+    .filter((h) => h.groupClientKey === targetGroupClientKey)
+    .reduce((max, h) => Math.max(max, h.sortOrder), -1);
+  return holdings.map((h) =>
+    h.clientKey === clientKey ? { ...h, groupClientKey: targetGroupClientKey, sortOrder: maxSortOrder + 1 } : h,
+  );
+}
+
+/**
  * Color slot (0, 1, 2, ...) per holding, keyed by clientKey — the edit-mode
  * counterpart of computeRebalance's colorSlotById. Ordered by creation
  * (created_at, then clientKey), NOT by display order, so dragging a holding

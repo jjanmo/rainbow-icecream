@@ -1,10 +1,18 @@
 import { useState } from "react";
-import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+} from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { toast } from "sonner";
 import { EditGroupCard } from "@/components/setup/EditGroupCard";
 import { GroupCard } from "@/components/setup/GroupCard";
-import { HoldingFormDialog } from "@/components/holdings/HoldingFormDialog";
 import { AllocationDonutChart } from "@/components/shared/AllocationDonutChart";
 import { DataErrorNotice } from "@/components/shared/DataErrorNotice";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +25,7 @@ import { hueForGroupIndex, groupColor } from "@/lib/calc/color";
 import { fmtPct, fmtWon } from "@/lib/format";
 import {
   commitSetupDraft,
-  draftHoldingFromForm,
+  moveDraftHoldingToGroup,
   newDraftGroup,
   reorderDraftGroups,
   reorderDraftHoldings,
@@ -26,7 +34,6 @@ import {
   type DraftGroup,
   type DraftHolding,
 } from "@/lib/setupDraft";
-import type { NewHolding } from "@/types/domain";
 
 export default function SetupPage() {
   const { data, prices, usdKrwRate, isLoading, isError, error } = useRebalanceData();
@@ -41,7 +48,6 @@ export default function SetupPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [draftGroups, setDraftGroups] = useState<DraftGroup[]>([]);
   const [draftHoldings, setDraftHoldings] = useState<DraftHolding[]>([]);
-  const [addingToGroupKey, setAddingToGroupKey] = useState<string | null>(null);
 
   const targetSumOk = data ? Math.abs(data.targetSum - 100) < 0.5 : true;
   const draftTargetSum = draftGroups.reduce((sum, g) => sum + g.targetPct, 0);
@@ -106,31 +112,37 @@ export default function SetupPage() {
     setDraftGroups((groups) => reorderDraftGroups(groups, orderedClientKeys));
   }
 
-  function updateDraftHolding(clientKey: string, patch: Partial<DraftHolding>) {
-    setDraftHoldings((holdings) => holdings.map((h) => (h.clientKey === clientKey ? { ...h, ...patch } : h)));
-  }
-
-  function deleteDraftHolding(clientKey: string) {
-    setDraftHoldings((holdings) => holdings.filter((h) => h.clientKey !== clientKey));
-  }
-
   function reorderHoldings(groupClientKey: string, orderedClientKeys: string[]) {
     setDraftHoldings((holdings) => reorderDraftHoldings(holdings, orderedClientKeys));
   }
 
-  function submitHoldingForm(holding: NewHolding) {
-    const groupHoldingCount = draftHoldings.filter((h) => h.groupClientKey === holding.groupId).length;
-    setDraftHoldings((holdings) => [
-      ...holdings,
-      draftHoldingFromForm({ ...holding, sortOrder: groupHoldingCount }),
-    ]);
-    setAddingToGroupKey(null);
-  }
-
-  const groupSensors = useSensors(
+  const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+
+  function dragType(event: { active: { data: { current?: Record<string, unknown> } } }): string | undefined {
+    return event.active.data.current?.type as string | undefined;
+  }
+
+  function targetGroupOf(over: NonNullable<DragOverEvent["over"]>): string | undefined {
+    const overData = over.data.current as { groupClientKey?: string } | undefined;
+    if (overData?.groupClientKey) return overData.groupClientKey;
+    return draftHoldings.find((h) => h.clientKey === over.id)?.groupClientKey;
+  }
+
+  // 종목을 다른 자산군 위로 드래그하는 순간 그 자산군 맨 뒤로 낙관적 이동시켜
+  // 드래그 중 미리보기가 실제로 옮겨진 것처럼 보이게 한다 (ADR-0036).
+  // handleHoldingDragEnd가 최종 위치를 정밀하게 잡는다.
+  function handleHoldingDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    if (!over || dragType(event) !== "holding") return;
+    const activeId = String(active.id);
+    const targetGroup = targetGroupOf(over);
+    const currentGroup = draftHoldings.find((h) => h.clientKey === activeId)?.groupClientKey;
+    if (!targetGroup || !currentGroup || targetGroup === currentGroup) return;
+    setDraftHoldings((holdings) => moveDraftHoldingToGroup(holdings, activeId, targetGroup));
+  }
 
   function handleGroupDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -140,6 +152,29 @@ export default function SetupPage() {
     const newIndex = clientKeys.indexOf(String(over.id));
     if (oldIndex === -1 || newIndex === -1) return;
     reorderGroups(arrayMove(clientKeys, oldIndex, newIndex));
+  }
+
+  // handleHoldingDragOver가 이미 최종 자산군으로 옮겨뒀으므로, 여기서는 그
+  // 자산군 안에서의 정확한 순서만 확정한다.
+  function handleHoldingDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const activeId = String(active.id);
+    const group = draftHoldings.find((h) => h.clientKey === activeId)?.groupClientKey;
+    if (!group) return;
+    const siblingKeys = draftHoldings
+      .filter((h) => h.groupClientKey === group)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((h) => h.clientKey);
+    const oldIndex = siblingKeys.indexOf(activeId);
+    const newIndex = siblingKeys.indexOf(String(over.id));
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+    reorderHoldings(group, arrayMove(siblingKeys, oldIndex, newIndex));
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    if (dragType(event) === "holding") handleHoldingDragEnd(event);
+    else handleGroupDragEnd(event);
   }
 
   const sortedDraftGroups = [...draftGroups].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -192,7 +227,16 @@ export default function SetupPage() {
         </div>
       ) : isEditing ? (
         <>
-          <DndContext sensors={groupSensors} collisionDetection={closestCenter} onDragEnd={handleGroupDragEnd}>
+          <p className="mb-3 text-xs text-muted-foreground">
+            종목을 드래그하면 같은 자산군 안에서 순서를 바꾸거나 다른 자산군으로 옮길 수 있습니다. 종목 자체를
+            추가·수정·삭제하려면 보유 종목 화면을 이용하세요.
+          </p>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragOver={handleHoldingDragOver}
+            onDragEnd={handleDragEnd}
+          >
             <SortableContext
               items={sortedDraftGroups.map((g) => g.clientKey)}
               strategy={verticalListSortingStrategy}
@@ -206,15 +250,10 @@ export default function SetupPage() {
                   holdings={draftHoldings
                     .filter((h) => h.groupClientKey === group.clientKey)
                     .sort((a, b) => a.sortOrder - b.sortOrder)}
-                  groupOptions={sortedDraftGroups.map((g) => ({ id: g.clientKey, name: g.name }))}
                   prices={prices}
                   usdKrwRate={usdKrwRate}
                   onUpdate={(patch) => updateDraftGroup(group.clientKey, patch)}
                   onDelete={() => deleteDraftGroup(group.clientKey)}
-                  onAddHolding={() => setAddingToGroupKey(group.clientKey)}
-                  onUpdateHolding={updateDraftHolding}
-                  onReorderHoldings={reorderHoldings}
-                  onDeleteHolding={deleteDraftHolding}
                 />
               ))}
             </SortableContext>
@@ -228,14 +267,6 @@ export default function SetupPage() {
           >
             + 자산군 추가
           </Button>
-
-          <HoldingFormDialog
-            open={addingToGroupKey !== null}
-            onOpenChange={(open) => !open && setAddingToGroupKey(null)}
-            groupOptions={sortedDraftGroups.map((g) => ({ id: g.clientKey, name: g.name }))}
-            defaultGroupId={addingToGroupKey}
-            onSubmit={submitHoldingForm}
-          />
         </>
       ) : (
         <>
