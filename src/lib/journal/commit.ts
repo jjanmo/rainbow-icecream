@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  fetchAccountFeeRates,
   fetchExecutionsForHolding,
   insertExecution,
   softDeleteExecution,
@@ -8,19 +7,11 @@ import {
 } from "@/lib/api/executions";
 import { updateHolding } from "@/lib/api/holdings";
 import type { Holding } from "@/types/domain";
-import type { AccountFeeRates, Execution, NewExecution } from "@/types/journal";
-import { defaultMarketFor } from "./marketMeta";
+import type { Execution, NewExecution } from "@/types/journal";
 import { replayHolding, type ReplayContext, type ReplayResult } from "./replay";
 
-function contextFor(holding: Holding, rates: AccountFeeRates[]): ReplayContext {
-  const rate = rates.find((r) => r.account === holding.account);
-  return {
-    region: holding.region,
-    market: holding.market ?? defaultMarketFor(holding.region),
-    assetType: holding.assetType,
-    domesticFeeRate: rate?.domesticFeeRate,
-    overseasFeeRate: rate?.overseasFeeRate,
-  };
+function contextFor(holding: Holding): ReplayContext {
+  return { region: holding.region };
 }
 
 export class OversoldError extends Error {
@@ -43,10 +34,9 @@ export class OversoldError extends Error {
 export async function replayAndPersistHolding(
   supabase: SupabaseClient,
   holding: Holding,
-  rates: AccountFeeRates[],
 ): Promise<ReplayResult> {
   const executions = await fetchExecutionsForHolding(supabase, holding.id);
-  const result = replayHolding(executions, contextFor(holding, rates));
+  const result = replayHolding(executions, contextFor(holding));
   if (result.oversold.length > 0) throw new OversoldError(result.oversold);
 
   if (result.qty !== holding.qty || result.avgPrice !== holding.avgPrice) {
@@ -70,10 +60,9 @@ export async function commitNewExecution(
   holding: Holding,
   execution: NewExecution,
 ): Promise<{ execution: Execution; replay: ReplayResult }> {
-  const rates = await fetchAccountFeeRates(supabase);
   const inserted = await insertExecution(supabase, execution);
   try {
-    const replay = await replayAndPersistHolding(supabase, holding, rates);
+    const replay = await replayAndPersistHolding(supabase, holding);
     return { execution: inserted, replay };
   } catch (err) {
     await softDeleteExecution(supabase, inserted.id).catch(() => {
@@ -89,9 +78,8 @@ export async function commitExecutionUpdate(
   executionId: string,
   patch: Partial<NewExecution>,
 ): Promise<ReplayResult> {
-  const rates = await fetchAccountFeeRates(supabase);
   await updateExecution(supabase, executionId, patch);
-  return replayAndPersistHolding(supabase, holding, rates);
+  return replayAndPersistHolding(supabase, holding);
 }
 
 export async function commitExecutionDelete(
@@ -99,7 +87,6 @@ export async function commitExecutionDelete(
   holding: Holding,
   executionId: string,
 ): Promise<ReplayResult> {
-  const rates = await fetchAccountFeeRates(supabase);
   await softDeleteExecution(supabase, executionId);
-  return replayAndPersistHolding(supabase, holding, rates);
+  return replayAndPersistHolding(supabase, holding);
 }

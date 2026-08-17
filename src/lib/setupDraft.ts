@@ -1,5 +1,4 @@
 import type { AssetGroup, Holding, NewAssetGroup, NewHolding, Region } from "@/types/domain";
-import type { AssetType, Market } from "@/types/journal";
 
 /**
  * Local, unsaved copy of a group/holding for /setup's edit mode. Editing
@@ -35,8 +34,6 @@ export interface DraftHolding {
   avgPrice: number;
   account: string | null;
   region: Region;
-  market: Market | null;
-  assetType: AssetType;
   memo: string | null;
   sortOrder: number;
 }
@@ -58,8 +55,6 @@ export function toDraftHolding(h: Holding): DraftHolding {
     avgPrice: h.avgPrice,
     account: h.account,
     region: h.region,
-    market: h.market,
-    assetType: h.assetType,
     memo: h.memo,
     sortOrder: h.sortOrder,
   };
@@ -87,8 +82,6 @@ export function draftHoldingFromForm(holding: NewHolding): DraftHolding {
     avgPrice: holding.avgPrice,
     account: holding.account,
     region: holding.region,
-    market: holding.market,
-    assetType: holding.assetType,
     memo: holding.memo,
     sortOrder: holding.sortOrder,
   };
@@ -108,6 +101,25 @@ export function reorderDraftHoldings(
     const sortOrder = orderByClientKey.get(h.clientKey);
     return sortOrder === undefined ? h : { ...h, sortOrder };
   });
+}
+
+/**
+ * Moves one holding into a different group during a cross-group drag
+ * (ADR-0036), placing it at the end of the target group's list. Used for the
+ * live preview while dragging over another group — `/setup`'s drag-end
+ * handler follows up with `reorderDraftHoldings` for precise final position.
+ */
+export function moveDraftHoldingToGroup(
+  holdings: DraftHolding[],
+  clientKey: string,
+  targetGroupClientKey: string,
+): DraftHolding[] {
+  const maxSortOrder = holdings
+    .filter((h) => h.groupClientKey === targetGroupClientKey)
+    .reduce((max, h) => Math.max(max, h.sortOrder), -1);
+  return holdings.map((h) =>
+    h.clientKey === clientKey ? { ...h, groupClientKey: targetGroupClientKey, sortOrder: maxSortOrder + 1 } : h,
+  );
 }
 
 /**
@@ -229,8 +241,6 @@ export async function commitSetupDraft({
       avgPrice: h.avgPrice,
       account: h.account,
       region: h.region,
-      market: h.market,
-      assetType: h.assetType,
       memo: h.memo,
       sortOrder: h.sortOrder,
     });
@@ -252,8 +262,6 @@ export async function commitSetupDraft({
     if (original.avgPrice !== h.avgPrice) patch.avgPrice = h.avgPrice;
     if (original.account !== h.account) patch.account = h.account;
     if (original.region !== h.region) patch.region = h.region;
-    if (original.market !== h.market) patch.market = h.market;
-    if (original.assetType !== h.assetType) patch.assetType = h.assetType;
     if (original.memo !== h.memo) patch.memo = h.memo;
     if (original.sortOrder !== h.sortOrder) patch.sortOrder = h.sortOrder;
     if (Object.keys(patch).length > 0) {

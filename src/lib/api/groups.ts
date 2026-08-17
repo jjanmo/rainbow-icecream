@@ -64,7 +64,53 @@ export async function updateGroup(
   if (error) throw error;
 }
 
+/** Group name holdings land in when their own group is deleted. Found by name
+ * (no dedicated flag column needed) — see findOrCreateUnclassifiedGroup. */
+const UNCLASSIFIED_GROUP_NAME = "미분류";
+
+/**
+ * Finds this user's "미분류" group, creating one if it doesn't exist yet.
+ * `excludeId` skips a candidate with that id — needed when deleting a group
+ * that happens to already be named "미분류" itself, so reassignment doesn't
+ * just point holdings back at the group about to be deleted.
+ */
+async function findOrCreateUnclassifiedGroup(supabase: SupabaseClient, excludeId?: string): Promise<string> {
+  let query = supabase.from("asset_groups").select("id").eq("name", UNCLASSIFIED_GROUP_NAME).limit(1);
+  if (excludeId) query = query.neq("id", excludeId);
+  const { data: existing, error: findError } = await query.maybeSingle();
+  if (findError) throw findError;
+  if (existing) return existing.id;
+
+  const { data: created, error: createError } = await supabase
+    .from("asset_groups")
+    .insert({ name: UNCLASSIFIED_GROUP_NAME, target_pct: 0, sort_order: 0 })
+    .select("id")
+    .single();
+  if (createError) throw createError;
+  return created.id;
+}
+
+/**
+ * 자산군을 삭제해도 그 안의 종목은 지우지 않는다 — "미분류" 자산군으로
+ * 옮긴다(find-or-create). `holdings.group_id`의 FK가 `on delete restrict`라
+ * 재배정 없이 delete만 하면 그대로 실패한다.
+ */
 export async function deleteGroup(supabase: SupabaseClient, id: string): Promise<void> {
+  const { data: members, error: fetchError } = await supabase
+    .from("holdings")
+    .select("id")
+    .eq("group_id", id);
+  if (fetchError) throw fetchError;
+
+  if (members && members.length > 0) {
+    const unclassifiedId = await findOrCreateUnclassifiedGroup(supabase, id);
+    const { error: reassignError } = await supabase
+      .from("holdings")
+      .update({ group_id: unclassifiedId })
+      .eq("group_id", id);
+    if (reassignError) throw reassignError;
+  }
+
   const { error } = await supabase.from("asset_groups").delete().eq("id", id);
   if (error) throw error;
 }

@@ -12,10 +12,6 @@ export type ExecutionIntent =
   | "REBALANCE" // 비중 조정
   | "CORPORATE_ACTION"; // 액면분할/무상증자 등 수동 조정 탈출구
 
-export type Market = "KOSPI" | "KOSDAQ" | "KONEX" | "KOTC" | "NASDAQ" | "NYSE" | "AMEX";
-
-export type AssetType = "STOCK" | "ETF" | "ETN" | "REIT" | "FUND" | "CASH";
-
 export type ExitReason = "THESIS_MET" | "THESIS_BROKEN" | "REBALANCE" | "STOP_HIT" | "EMOTIONAL";
 
 export type NoteTargetType = "EXECUTION" | "POSITION" | "DAY";
@@ -26,8 +22,8 @@ export type NoteTargetType = "EXECUTION" | "POSITION" | "DAY";
  * 수정되지 않는다 (ADR-0027).
  *
  * price 는 종목의 원래 통화 기준(국내 KRW, 해외 USD)이고, fxRate 는 체결 시점에
- * 고정 저장된다 (ADR-0029). 수수료·세금은 저장 시 계산해 스냅샷으로 남긴다
- * (ADR-0028) — 요율이 나중에 바뀌어도 과거 실현손익이 흔들리지 않도록.
+ * 고정 저장된다 (ADR-0029). 수수료·증권거래세는 계산하지 않는다 — 증권사·이벤트
+ * 할인율마다 달라 정밀 계산의 실익이 낮다고 판단해 뺐다 (ADR-0034).
  */
 export interface Execution {
   id: string;
@@ -42,12 +38,6 @@ export interface Execution {
   price: number;
   /** 원래 통화 → KRW. 국내 종목은 1. */
   fxRate: number;
-  feeAmount: number;
-  taxAmount: number;
-  appliedFeeRate: number;
-  appliedTaxRate: number;
-  /** 사용자가 계산된 수수료·세금을 직접 덮어썼는지. */
-  costOverridden: boolean;
   createdAt: string;
 }
 
@@ -79,12 +69,6 @@ export interface TradeNote {
 }
 
 export type NewTradeNote = Omit<TradeNote, "id" | "userId" | "createdAt">;
-
-export interface AccountFeeRates {
-  account: string;
-  domesticFeeRate: number;
-  overseasFeeRate: number;
-}
 
 export const EMOTION_TAGS = ["조급함", "FOMO", "복수매매", "확신과잉", "무감정"] as const;
 

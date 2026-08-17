@@ -21,7 +21,7 @@
 | [0013](./0013-setup-actual-weight-and-full-holding-add.md) | 설정 페이지 "실제 보유 비중"으로 교체 + 종목 추가 시 전체 항목 입력 | Accepted |
 | [0014](./0014-setup-full-holding-edit.md) | 설정 페이지에서 종목 수정도 전체 항목 편집 가능하도록 확장 | Superseded by ADR-0015 |
 | [0015](./0015-setup-accordion-and-dnd-reorder.md) | 설정 페이지 종목 수정을 아코디언으로, dnd-kit으로 순서 변경 | Accepted |
-| [0016](./0016-block-completion-over-100-target.md) | 자산군 목표 비중 합계 100% 초과 시 완료 차단 | Accepted |
+| [0016](./0016-block-completion-over-100-target.md) | 자산군 목표 비중 합계 100% 초과 시 완료 차단 | Superseded by ADR-0037 |
 | [0017](./0017-group-cards-collapse-by-default.md) | 자산군 카드 기본 접힘, 클릭해야 종목 목록 노출 | Accepted |
 | [0018](./0018-remove-in-group-weight-from-setup-ui.md) | 설정 페이지 UI에서 그룹 내 비중 편집/표시 제거 | Accepted |
 | [0019](./0019-group-dnd-and-derived-color.md) | 자산군 드래그 재정렬 + 위치 기반 자동 색상 (수동 색상 설정 제거) | Accepted |
@@ -33,12 +33,16 @@
 | [0025](./0025-holding-color-pinned-to-creation-order.md) | 종목 색상은 최초 생성 순서에 고정 (드래그 재정렬과 분리) | Accepted |
 | [0026](./0026-diff-sign-colors-and-threshold-10.md) | 괴리는 상승/하락 색, 조치 여부는 같은 계열 강조 · 기준 10%p · 리밸런싱 상태 컬럼 | Accepted |
 | [0027](./0027-execution-ledger-as-holding-source.md) | 보유 수량·평단은 체결 원장에서만 계산 (기존 보유는 기초잔고 체결로 흡수) | Accepted |
-| [0028](./0028-derive-fees-and-taxes.md) | 수수료·증권거래세는 계산하고 체결에 스냅샷 (국내 ETF 매도 면세) | Accepted |
+| [0028](./0028-derive-fees-and-taxes.md) | 수수료·증권거래세는 계산하고 체결에 스냅샷 (국내 ETF 매도 면세) | Superseded by ADR-0034 |
 | [0029](./0029-fx-rate-snapshot.md) | 환율은 체결 시점 값 고정 저장, 환전 스프레드는 별도 비용 아님 | Accepted |
 | [0030](./0030-number-with-rounding-guard.md) | 금액은 number 유지 + 반올림 경계에서 표현 오차 봉쇄 | Accepted |
 | [0031](./0031-structured-tags-and-separated-notes.md) | 정성 데이터는 구조화 태그 우선, 노트는 체결과 분리 | Accepted |
 | [0032](./0032-soft-delete-and-full-replay.md) | 체결 수정·삭제는 soft delete + 해당 종목 전체 리플레이 | Accepted |
 | [0033](./0033-trade-note-capture-in-execution-sheet.md) | 근거·태그를 체결 입력 시트에서 접이식으로, 매도 시 매수 근거 배너 표시 | Accepted |
+| [0034](./0034-remove-fee-tax-modeling.md) | 수수료·증권거래세 계산 제거, 환율만 유지 | Accepted |
+| [0035](./0035-group-delete-reassigns-to-unclassified.md) | 자산군 삭제는 하위 종목을 지우지 않고 "미분류"로 이동 | Accepted |
+| [0036](./0036-holding-crud-moved-to-holdings-page.md) | 종목 CRUD를 보유종목 페이지로 일원화, 설정 페이지엔 자산군 간 dnd 추가 | Accepted |
+| [0037](./0037-block-completion-under-100-target-too.md) | 자산군 목표 비중 합계 100% 미만도 완료 차단 | Accepted |
 
 ## 새 ADR 작성 형식
 

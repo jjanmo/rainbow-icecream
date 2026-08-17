@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AccountFeeRates, Execution, ExecutionIntent, NewExecution, Side } from "@/types/journal";
+import type { Execution, ExecutionIntent, NewExecution, Side } from "@/types/journal";
 
 interface ExecutionRow {
   id: string;
@@ -11,16 +11,10 @@ interface ExecutionRow {
   qty: number;
   price: number;
   fx_rate: number;
-  fee_amount: number;
-  tax_amount: number;
-  applied_fee_rate: number;
-  applied_tax_rate: number;
-  cost_overridden: boolean;
   created_at: string;
 }
 
-const COLUMNS =
-  "id, user_id, holding_id, side, intent, executed_at, qty, price, fx_rate, fee_amount, tax_amount, applied_fee_rate, applied_tax_rate, cost_overridden, created_at";
+const COLUMNS = "id, user_id, holding_id, side, intent, executed_at, qty, price, fx_rate, created_at";
 
 function toDomain(row: ExecutionRow): Execution {
   return {
@@ -33,11 +27,6 @@ function toDomain(row: ExecutionRow): Execution {
     qty: Number(row.qty),
     price: Number(row.price),
     fxRate: Number(row.fx_rate),
-    feeAmount: Number(row.fee_amount),
-    taxAmount: Number(row.tax_amount),
-    appliedFeeRate: Number(row.applied_fee_rate),
-    appliedTaxRate: Number(row.applied_tax_rate),
-    costOverridden: row.cost_overridden,
     createdAt: row.created_at,
   };
 }
@@ -51,11 +40,6 @@ function toRow(execution: NewExecution) {
     qty: execution.qty,
     price: execution.price,
     fx_rate: execution.fxRate,
-    fee_amount: execution.feeAmount,
-    tax_amount: execution.taxAmount,
-    applied_fee_rate: execution.appliedFeeRate,
-    applied_tax_rate: execution.appliedTaxRate,
-    cost_overridden: execution.costOverridden,
   };
 }
 
@@ -109,11 +93,6 @@ export async function updateExecution(
   if (patch.qty !== undefined) update.qty = patch.qty;
   if (patch.price !== undefined) update.price = patch.price;
   if (patch.fxRate !== undefined) update.fx_rate = patch.fxRate;
-  if (patch.feeAmount !== undefined) update.fee_amount = patch.feeAmount;
-  if (patch.taxAmount !== undefined) update.tax_amount = patch.taxAmount;
-  if (patch.appliedFeeRate !== undefined) update.applied_fee_rate = patch.appliedFeeRate;
-  if (patch.appliedTaxRate !== undefined) update.applied_tax_rate = patch.appliedTaxRate;
-  if (patch.costOverridden !== undefined) update.cost_overridden = patch.costOverridden;
 
   const { error } = await supabase.from("executions").update(update).eq("id", id);
   if (error) throw error;
@@ -126,16 +105,4 @@ export async function softDeleteExecution(supabase: SupabaseClient, id: string):
     .update({ deleted_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw error;
-}
-
-export async function fetchAccountFeeRates(supabase: SupabaseClient): Promise<AccountFeeRates[]> {
-  const { data, error } = await supabase
-    .from("account_fee_rates")
-    .select("account, domestic_fee_rate, overseas_fee_rate");
-  if (error) throw error;
-  return (data as { account: string; domestic_fee_rate: number; overseas_fee_rate: number }[]).map((r) => ({
-    account: r.account,
-    domesticFeeRate: Number(r.domestic_fee_rate),
-    overseasFeeRate: Number(r.overseas_fee_rate),
-  }));
 }

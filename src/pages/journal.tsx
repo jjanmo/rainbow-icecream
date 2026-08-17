@@ -297,10 +297,6 @@ function ExecutionList({
             <span className="ml-auto shrink-0 font-mono text-xs">
               {fmtQty(e.qty)} × {fmt(e.price)}
             </span>
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              수수료 {fmt(e.feeAmount)}
-              {e.taxAmount > 0 && ` · 세금 ${fmt(e.taxAmount)}`}
-            </span>
             <Button
               variant="ghost"
               size="icon-xs"

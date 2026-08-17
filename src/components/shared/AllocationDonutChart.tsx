@@ -13,19 +13,27 @@ export function AllocationDonutChart({
   title,
   centerLabel,
   data,
+  activeId: controlledActiveId,
+  onActiveIdChange,
 }: {
   title: ReactNode;
   centerLabel: string;
   data: DonutSlice[];
+  /** Controlled active-slice id, so two charts sharing the same ids (e.g. asset
+   * groups) can be hovered/highlighted in sync. Omit for standalone use. */
+  activeId?: string | null;
+  onActiveIdChange?: (id: string | null) => void;
 }) {
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [internalActiveId, setInternalActiveId] = useState<string | null>(null);
+  const activeId = controlledActiveId !== undefined ? controlledActiveId : internalActiveId;
+  const setActiveId = onActiveIdChange ?? setInternalActiveId;
 
   const hasValue = data.some((d) => d.value > 0);
   const chartData = hasValue ? data : [{ id: 'empty', name: '-', value: 1, color: 'var(--muted)' }];
   const active = data.find((d) => d.id === activeId);
 
   function clearIfActive(id: string) {
-    setActiveId((current) => (current === id ? null : current));
+    if (activeId === id) setActiveId(null);
   }
 
   return (
@@ -51,7 +59,7 @@ export function AllocationDonutChart({
                     opacity={activeId === null || activeId === d.id ? 1 : 0.35}
                     onMouseEnter={() => hasValue && setActiveId(d.id)}
                     onMouseLeave={() => hasValue && clearIfActive(d.id)}
-                    onClick={() => hasValue && setActiveId((cur) => (cur === d.id ? null : d.id))}
+                    onClick={() => hasValue && setActiveId(activeId === d.id ? null : d.id)}
                     style={{ cursor: hasValue ? 'pointer' : 'default' }}
                   />
                 ))}
@@ -80,7 +88,7 @@ export function AllocationDonutChart({
               style={{ opacity: activeId === null || activeId === d.id ? 1 : 0.5 }}
               onMouseEnter={() => setActiveId(d.id)}
               onMouseLeave={() => clearIfActive(d.id)}
-              onClick={() => setActiveId((cur) => (cur === d.id ? null : d.id))}
+              onClick={() => setActiveId(activeId === d.id ? null : d.id)}
             >
               <div className="size-2.25 shrink-0 rounded-full" style={{ background: d.color }} />
               <span className="flex-1 truncate">{d.name}</span>

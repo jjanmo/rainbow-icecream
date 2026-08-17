@@ -20,7 +20,11 @@ create table if not exists asset_groups (
 create table if not exists holdings (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
-  group_id uuid not null references asset_groups(id) on delete cascade,
+  -- restrict, not cascade: deleting a group must not delete its holdings.
+  -- lib/api/groups.ts's deleteGroup reassigns them to a "미분류" group first
+  -- (find-or-create), so this FK should never actually block a delete in
+  -- practice — it's a safety net if that reassignment is ever skipped.
+  group_id uuid not null references asset_groups(id) on delete restrict,
   ticker text,
   name text not null default '새 종목',
   target_pct_in_group numeric not null default 0 check (target_pct_in_group between 0 and 100),
@@ -83,15 +87,6 @@ create policy "own holdings" on holdings
 -- 매매일지 (trading journal) — ADR-0027 ~ 0032
 -- ---------------------------------------------------------------------------
 
--- Tax rate lookup needs the exact market (KOSPI vs KOSDAQ) and whether the
--- holding is an ETF (국내 ETF는 매도 시 증권거래세 면제 — ADR-0028). `region`
--- alone can't answer either, so holdings carries both. Nullable market falls
--- back to a region-based default so existing rows stay valid.
-alter table holdings add column if not exists market text
-  check (market is null or market in ('KOSPI', 'KOSDAQ', 'KONEX', 'KOTC', 'NASDAQ', 'NYSE', 'AMEX'));
-alter table holdings add column if not exists asset_type text not null default 'STOCK'
-  check (asset_type in ('STOCK', 'ETF', 'ETN', 'REIT', 'FUND', 'CASH'));
-
 -- The execution ledger. Single write path for 보유수량/평균매입가 (ADR-0027):
 -- holdings.qty / holdings.avg_price are a materialized replay of these rows,
 -- never edited independently. A holding's pre-journal balance lives here too,
@@ -110,14 +105,8 @@ create table if not exists executions (
   price numeric not null check (price >= 0),
   /** Native → KRW, frozen at execution time (ADR-0029). '1' for KRW holdings. */
   fx_rate numeric not null default 1 check (fx_rate > 0),
-  -- Derived at save time and snapshotted, so a later rate change can't rewrite
-  -- past 실현손익 (ADR-0028).
-  fee_amount numeric not null default 0 check (fee_amount >= 0),
-  tax_amount numeric not null default 0 check (tax_amount >= 0),
-  applied_fee_rate numeric not null default 0 check (applied_fee_rate >= 0),
-  applied_tax_rate numeric not null default 0 check (applied_tax_rate >= 0),
-  /** true once the user overrode the derived fee/tax by hand. */
-  cost_overridden boolean not null default false,
+  -- Deliberately no fee/tax columns: 수수료·증권거래세는 계산하지 않는다
+  -- (ADR-0034) — 브로커·이벤트 할인율마다 달라 정밀 계산의 실익이 낮다고 판단.
   /** soft delete — physical deletes would make past 실현손익 unexplainable (ADR-0032). */
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
@@ -162,18 +151,6 @@ create table if not exists trade_notes (
 create unique index if not exists trade_notes_target_idx
   on trade_notes (user_id, target_type, target_key);
 
--- Per-account 위탁수수료율. No row means the app-wide default applies, so this
--- table only ever holds explicit overrides (ADR-0028).
-create table if not exists account_fee_rates (
-  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
-  account text not null,
-  domestic_fee_rate numeric not null default 0.00015 check (domestic_fee_rate >= 0),
-  overseas_fee_rate numeric not null default 0.0007 check (overseas_fee_rate >= 0),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  primary key (user_id, account)
-);
-
 drop trigger if exists executions_set_updated_at on executions;
 create trigger executions_set_updated_at
   before update on executions
@@ -184,14 +161,8 @@ create trigger trade_notes_set_updated_at
   before update on trade_notes
   for each row execute function set_updated_at();
 
-drop trigger if exists account_fee_rates_set_updated_at on account_fee_rates;
-create trigger account_fee_rates_set_updated_at
-  before update on account_fee_rates
-  for each row execute function set_updated_at();
-
 alter table executions enable row level security;
 alter table trade_notes enable row level security;
-alter table account_fee_rates enable row level security;
 
 -- executions: own the row AND own the holding it points to.
 drop policy if exists "own executions" on executions;
@@ -209,12 +180,6 @@ create policy "own trade notes" on trade_notes
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
 
-drop policy if exists "own account fee rates" on account_fee_rates;
-create policy "own account fee rates" on account_fee_rates
-  for all
-  using (user_id = auth.uid())
-  with check (user_id = auth.uid());
-
 -- ---------------------------------------------------------------------------
 -- Migration: absorb each existing holding's balance as an OPENING_BALANCE
 -- execution (PRD §4 F-7). Idempotent — skips holdings that already have one.
@@ -228,3 +193,27 @@ where h.qty > 0
     select 1 from executions e
     where e.holding_id = h.id and e.intent = 'OPENING_BALANCE' and e.deleted_at is null
   );
+
+-- ---------------------------------------------------------------------------
+-- Migration: 수수료·증권거래세 계산 제거 (ADR-0034). Idempotent — `if exists`라
+-- 여러 번 실행해도 안전하다. 이미 반영된 프로젝트에서 다시 실행하면 아무 일도
+-- 일어나지 않는다.
+-- ---------------------------------------------------------------------------
+alter table holdings drop column if exists market;
+alter table holdings drop column if exists asset_type;
+alter table executions drop column if exists fee_amount;
+alter table executions drop column if exists tax_amount;
+alter table executions drop column if exists applied_fee_rate;
+alter table executions drop column if exists applied_tax_rate;
+alter table executions drop column if exists cost_overridden;
+drop table if exists account_fee_rates;
+
+-- ---------------------------------------------------------------------------
+-- Migration: 자산군 삭제가 하위 종목을 지우지 않도록 변경. 종목은
+-- lib/api/groups.ts의 deleteGroup이 삭제 전에 "미분류" 자산군으로 재배정한다
+-- — 이 FK는 그 재배정이 어떤 이유로든 빠졌을 때 삭제 자체를 막는 안전장치다.
+-- Idempotent — 제약을 지우고 다시 만들 뿐이라 여러 번 실행해도 안전하다.
+-- ---------------------------------------------------------------------------
+alter table holdings drop constraint if exists holdings_group_id_fkey;
+alter table holdings add constraint holdings_group_id_fkey
+  foreign key (group_id) references asset_groups(id) on delete restrict;
