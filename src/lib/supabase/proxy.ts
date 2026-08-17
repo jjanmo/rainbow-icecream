@@ -21,6 +21,18 @@ function hasAppAccess(user: User | null): boolean {
 }
 
 /**
+ * Carries any session cookies Supabase refreshed during this request onto a
+ * different response. Without this, a request that ends in a redirect drops
+ * the rotated tokens: Supabase has already invalidated the old refresh token
+ * server-side, but the browser never receives the new one, so the session
+ * dies and the user gets bounced back to /login with no visible error.
+ */
+function withRefreshedCookies(from: NextResponse, to: NextResponse): NextResponse {
+  from.cookies.getAll().forEach((cookie) => to.cookies.set(cookie));
+  return to;
+}
+
+/**
  * Refreshes the Supabase session cookie on every navigation and gates
  * /setup, /rebalance, /holdings, and / behind auth. Called from root proxy.ts.
  * Uses getUser() (JWT re-verified against the Auth server), not getSession().
@@ -46,10 +58,18 @@ export async function updateSession(request: NextRequest) {
   // "not authenticated" for gating purposes instead of throwing.
   let user: User | null = null;
   try {
-    const result = await supabase.auth.getUser();
-    user = result.data.user;
+    const { data, error } = await supabase.auth.getUser();
+    user = data.user;
+    // getUser() reports most failures through `error` rather than throwing, and
+    // a null user is indistinguishable from "not logged in" — which silently
+    // redirects to /login with no visible reason. Surface anything that isn't
+    // the ordinary anonymous case (AuthSessionMissingError), so an operational
+    // failure is diagnosable instead of looking like a wrong password.
+    if (error && error.name !== "AuthSessionMissingError") {
+      console.error(`Supabase getUser() failed in proxy: ${error.name}/${error.status} ${error.message}`);
+    }
   } catch (err) {
-    console.error("Supabase getUser() failed in proxy", err);
+    console.error("Supabase getUser() threw in proxy", err);
   }
 
   const { pathname } = request.nextUrl;
@@ -61,11 +81,11 @@ export async function updateSession(request: NextRequest) {
     // Distinguish "not logged in" from "logged in, but this account isn't
     // provisioned for this app" so the login page can show the right message.
     if (user) loginUrl.searchParams.set("error", "no_access");
-    return NextResponse.redirect(loginUrl);
+    return withRefreshedCookies(response, NextResponse.redirect(loginUrl));
   }
 
   if (authorized && pathname === "/login") {
-    return NextResponse.redirect(new URL("/setup", request.url));
+    return withRefreshedCookies(response, NextResponse.redirect(new URL("/setup", request.url)));
   }
 
   return response;
