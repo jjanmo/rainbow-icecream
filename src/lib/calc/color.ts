@@ -1,8 +1,7 @@
 // Ported 1:1 from the claude.ai/design mockup's computeDerived color system:
 // 6 brand "flavor" hues (still used for one-off semantic colors like
-// GOOD_COLOR), a fixed 4-level shade scale, and a continuous tint-by-index
-// scale for holdings within a group. Group colors themselves are no longer
-// picked from this fixed set — see hueForGroupIndex below.
+// GOOD_COLOR) and a fixed 4-level shade scale. Group colors themselves are no
+// longer picked from this fixed set — see hueForGroupIndex below.
 
 export const FLAVOR_HEXES = [
   "#F2547D", // 딸기 Strawberry
@@ -61,17 +60,4 @@ export function hueForGroupIndex(index: number, total: number): number {
 
 export function groupColor(index: number, total: number): string {
   return colorFor(hueForGroupIndex(index, total), 0);
-}
-
-/**
- * Lighter/softer as a holding's stable index within its group grows, so any
- * number of holdings stays visually distinct without a fixed swatch set.
- * `index` must come from a stable order (created_at, id) — never from
- * render/sort order, since e.g. the rebalance table re-sorts by |diff|.
- */
-export function tintForIndex(hue: number, index: number, total: number): string {
-  const t = total > 1 ? index / (total - 1) : 0.35;
-  const L = 60 + t * 28;
-  const C = 0.1 - t * 0.07;
-  return `oklch(${L.toFixed(1)}% ${C.toFixed(3)} ${hue})`;
 }

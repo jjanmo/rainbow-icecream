@@ -21,7 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAddGroup, useDeleteGroup, useUpdateGroup } from "@/hooks/useGroups";
 import { useAddHolding, useDeleteHolding, useUpdateHolding } from "@/hooks/useHoldings";
 import { useRebalanceData } from "@/hooks/useRebalanceData";
-import { hueForGroupIndex, groupColor } from "@/lib/calc/color";
+import { groupColor } from "@/lib/calc/color";
 import { fmtPct, fmtWon } from "@/lib/format";
 import {
   commitSetupDraft,
@@ -250,7 +250,6 @@ export default function SetupPage() {
                   key={group.clientKey}
                   group={group}
                   color={groupColor(index, sortedDraftGroups.length)}
-                  hue={hueForGroupIndex(index, sortedDraftGroups.length)}
                   holdings={draftHoldings
                     .filter((h) => h.groupClientKey === group.clientKey)
                     .sort((a, b) => a.sortOrder - b.sortOrder)}

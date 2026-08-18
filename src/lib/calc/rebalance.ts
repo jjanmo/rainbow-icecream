@@ -1,5 +1,5 @@
 import type { AssetGroup, Currency, Holding, LivePriceMap, Region } from "@/types/domain";
-import { colorFor, FLAVOR_HEXES, hueForGroupIndex, tintForIndex } from "./color";
+import { colorFor, FLAVOR_HEXES, hueForGroupIndex } from "./color";
 
 /** Diff (percentage points) below which an asset group is considered "on target". */
 export const REBALANCE_THRESHOLD = 10;
@@ -27,7 +27,6 @@ const LOSS_COLOR = "oklch(55% 0.16 25)";
  * rebalance judgement happens on GroupCalc — see ADR-0024.
  */
 export interface HoldingCalc extends Holding {
-  color: string;
   groupName: string;
   groupColor: string;
   /** Price in the holding's native currency (KRW domestic, USD overseas). Falls
@@ -138,20 +137,6 @@ export function computeRebalance({
 
   const holdingsStable = [...holdings].sort(byOrderThenCreatedThenId);
 
-  // A holding's color index is pinned to creation order, never display order,
-  // so drag-reordering on /setup doesn't repaint it (or its neighbours) — a
-  // holding keeps the same tint for its whole life, across every page.
-  const colorSlotById = new Map<string, { index: number; total: number }>();
-  const createdOrderByGroup = new Map<string, string[]>();
-  [...holdings].sort(byCreatedThenId).forEach((h) => {
-    const arr = createdOrderByGroup.get(h.groupId) ?? [];
-    arr.push(h.id);
-    createdOrderByGroup.set(h.groupId, arr);
-  });
-  createdOrderByGroup.forEach((ids) => {
-    ids.forEach((id, index) => colorSlotById.set(id, { index, total: ids.length }));
-  });
-
   // Resolve native/KRW price up front per holding — no live quote (no ticker,
   // or Toss lookup failed) falls back to avgPrice, already in the holding's
   // own native currency (KRW for 국내, USD for 해외).
@@ -172,7 +157,6 @@ export function computeRebalance({
     const group = groupById.get(h.groupId);
     const groupIndex = groupIndexById.get(h.groupId) ?? 0;
     const hue = hueForGroupIndex(groupIndex, sortedGroups.length);
-    const colorSlot = colorSlotById.get(h.id) ?? { index: 0, total: 1 };
     const { priceNative, nativeCurrency, priceKrw, value, valueNative, hasLivePrice } = resolvedPrices.get(h.id)!;
     const actualPct = totalValue > 0 ? (value / totalValue) * 100 : 0;
     const gValue = groupValue.get(h.groupId) ?? 0;
@@ -184,7 +168,6 @@ export function computeRebalance({
 
     return {
       ...h,
-      color: tintForIndex(hue, colorSlot.index, colorSlot.total),
       groupName: group?.name ?? "미분류",
       groupColor: group ? colorFor(hue, 0) : "oklch(70% 0 0)",
       priceNative,

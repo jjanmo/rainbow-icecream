@@ -1,7 +1,7 @@
 # ADR-0025: 종목 색상은 최초 생성 순서에 고정
 
 ## Status
-Accepted
+Superseded by ADR-0040 (종목별 색상 자체를 없앰)
 
 ## Context
 

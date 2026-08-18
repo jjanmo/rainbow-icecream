@@ -6,9 +6,8 @@ import { ChevronDown, GripVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEditableField, useEditableNumberField } from '@/hooks/useEditableField';
-import { tintForIndex } from '@/lib/calc/color';
 import { resolveHoldingValueKrw } from '@/lib/calc/rebalance';
-import { draftColorSlots, type DraftGroup, type DraftHolding } from '@/lib/setupDraft';
+import type { DraftGroup, DraftHolding } from '@/lib/setupDraft';
 import type { LivePriceMap } from '@/types/domain';
 import { EditHoldingInlineRow } from './EditHoldingInlineRow';
 
@@ -21,7 +20,6 @@ export function groupDropId(clientKey: string): string {
 export function EditGroupCard({
   group,
   color,
-  hue,
   holdings,
   prices,
   usdKrwRate,
@@ -29,10 +27,9 @@ export function EditGroupCard({
   onDelete,
 }: {
   group: DraftGroup;
-  /** This group's derived color/hue — computed by the parent from its position
+  /** This group's derived color — computed by the parent from its position
    * among all groups (lib/calc/color.ts hueForGroupIndex), not user-settable. */
   color: string;
-  hue: number;
   /** This group's holdings, already sorted by sortOrder. */
   holdings: DraftHolding[];
   /** For resolving each draft holding's live 평가금 — see resolveHoldingValueKrw. */
@@ -42,9 +39,6 @@ export function EditGroupCard({
   onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  // Creation-order color slots, so a holding's tint survives drag-reordering
-  // here just like it does in read mode (ADR-0025).
-  const colorSlots = draftColorSlots(holdings);
   const name = useEditableField(group.name, (v) => onUpdate({ name: v }));
   const targetPct = useEditableNumberField(group.targetPct, (v) => onUpdate({ targetPct: v }));
 
@@ -127,7 +121,6 @@ export function EditGroupCard({
               <EditHoldingInlineRow
                 key={holding.clientKey}
                 holding={holding}
-                color={tintForIndex(hue, colorSlots.get(holding.clientKey) ?? 0, holdings.length)}
                 value={resolved.value}
                 valueNative={resolved.valueNative}
               />

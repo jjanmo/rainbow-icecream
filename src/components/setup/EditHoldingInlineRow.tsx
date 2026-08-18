@@ -11,12 +11,10 @@ import type { DraftHolding } from "@/lib/setupDraft";
  */
 export function EditHoldingInlineRow({
   holding,
-  color,
   value,
   valueNative,
 }: {
   holding: DraftHolding;
-  color: string;
   /** Live KRW valuation (qty × current/avgPrice-fallback price) — resolved by
    * the parent via lib/calc/rebalance.ts resolveHoldingValueKrw, since draft
    * holdings aren't run through computeRebalance. */
@@ -44,7 +42,6 @@ export function EditHoldingInlineRow({
       >
         <GripVertical className="size-3.5" />
       </button>
-      <div className="size-2.5 shrink-0 rounded-full" style={{ background: color }} />
       {holding.ticker && (
         <span className="shrink-0 font-mono text-xs text-muted-foreground">{holding.ticker}</span>
       )}

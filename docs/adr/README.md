@@ -30,7 +30,7 @@
 | [0022](./0022-cash-like-holding-entry.md) | 종목 모달에 원화/달러 체크박스로 현금성 자산 등록 경로 복구 | Accepted |
 | [0023](./0023-rebalance-page-dedup.md) | 비중 체크 페이지에서 설정/보유종목 페이지와 중복되는 내용 제거 | Accepted |
 | [0024](./0024-group-level-rebalance-only.md) | 리밸런싱 판단은 자산군 단위로만 (종목 단위 목표/괴리 제거) | Accepted |
-| [0025](./0025-holding-color-pinned-to-creation-order.md) | 종목 색상은 최초 생성 순서에 고정 (드래그 재정렬과 분리) | Accepted |
+| [0025](./0025-holding-color-pinned-to-creation-order.md) | 종목 색상은 최초 생성 순서에 고정 (드래그 재정렬과 분리) | Superseded by ADR-0040 |
 | [0026](./0026-diff-sign-colors-and-threshold-10.md) | 괴리는 상승/하락 색, 조치 여부는 같은 계열 강조 · 기준 10%p · 리밸런싱 상태 컬럼 | Accepted |
 | [0027](./0027-execution-ledger-as-holding-source.md) | 보유 수량·평단은 체결 원장에서만 계산 (기존 보유는 기초잔고 체결로 흡수) | Accepted |
 | [0028](./0028-derive-fees-and-taxes.md) | 수수료·증권거래세는 계산하고 체결에 스냅샷 (국내 ETF 매도 면세) | Superseded by ADR-0034 |
@@ -45,6 +45,7 @@
 | [0037](./0037-block-completion-under-100-target-too.md) | 자산군 목표 비중 합계 100% 미만도 완료 차단 | Accepted |
 | [0038](./0038-drop-fx-rate-native-currency-pnl.md) | 체결에 환율을 저장하지 않고, 실현손익은 거래 통화 기준으로만 표시 | Accepted |
 | [0039](./0039-execution-edit-entry-point.md) | 매매일지에 체결 수정 진입점 추가, 종목 재배정은 미지원 | Accepted |
+| [0040](./0040-remove-per-holding-color.md) | 종목별 색상을 없앰 (자산군 색은 유지) | Accepted |
 
 ## 새 ADR 작성 형식
 
