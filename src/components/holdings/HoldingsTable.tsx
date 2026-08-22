@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
-import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { HoldingCalc } from '@/lib/calc/rebalance';
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { returnColor, type HoldingCalc } from '@/lib/calc/rebalance';
+import { fmtSigned, fmtWon } from '@/lib/format';
 import type { Holding } from '@/types/domain';
 import { HoldingsTableRow } from './HoldingsTableRow';
 
@@ -96,15 +97,27 @@ function SortableHeaderLabel({
 
 export function HoldingsTable({
   rows,
+  usdKrwRate,
   onEdit,
   onDelete,
 }: {
   rows: HoldingCalc[];
+  /** For converting 해외 종목의 평균매입가(달러)를 원화 취득원가로 — 총 수익률
+   * 계산에만 쓴다. 실시간 환율이라 평가금액과 같은 성격의 값이다(ADR-0029/0038이
+   * 지킨 "환율은 평가금액에만" 경계와 일관됨 — 실현손익에는 안 쓴다). */
+  usdKrwRate: number;
   onEdit: (holding: Holding) => void;
   onDelete: (id: string) => void;
 }) {
   const [sort, setSort] = useState<SortState | null>(null);
   const sortedRows = useMemo(() => [...rows].sort((a, b) => compareHoldings(a, b, sort)), [rows, sort]);
+
+  const totalValue = rows.reduce((sum, h) => sum + h.value, 0);
+  const totalCostKrw = rows.reduce(
+    (sum, h) => sum + h.qty * h.avgPrice * (h.nativeCurrency === 'USD' ? usdKrwRate : 1),
+    0,
+  );
+  const totalReturnPct = totalCostKrw > 0 ? ((totalValue - totalCostKrw) / totalCostKrw) * 100 : 0;
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card">
@@ -142,6 +155,24 @@ export function HoldingsTable({
             />
           ))}
         </TableBody>
+        {rows.length > 0 && (
+          <TableFooter>
+            <TableRow>
+              <TableCell className="font-semibold">합계</TableCell>
+              <TableCell />
+              <TableCell />
+              <TableCell />
+              <TableCell />
+              <TableCell />
+              <TableCell />
+              <TableCell className="text-right font-mono font-semibold">{fmtWon(totalValue)}</TableCell>
+              <TableCell className="text-right font-mono font-semibold" style={{ color: returnColor(totalReturnPct) }}>
+                {fmtSigned(totalReturnPct)}
+              </TableCell>
+              <TableCell />
+            </TableRow>
+          </TableFooter>
+        )}
       </Table>
     </div>
   );

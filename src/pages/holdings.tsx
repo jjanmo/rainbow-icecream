@@ -10,7 +10,7 @@ import { useRebalanceData } from '@/hooks/useRebalanceData';
 import type { Holding } from '@/types/domain';
 
 export default function HoldingsPage() {
-  const { data, isLoading, isError, error } = useRebalanceData();
+  const { data, usdKrwRate, isLoading, isError, error } = useRebalanceData();
   const addHolding = useAddHolding();
   const updateHolding = useUpdateHolding();
   const deleteHolding = useDeleteHolding();
@@ -66,13 +66,21 @@ export default function HoldingsPage() {
         <p className="text-sm text-muted-foreground">먼저 포트폴리오 설정에서 자산군을 추가해주세요.</p>
       ) : (
         <>
-          <HoldingsFilterBar
-            filter={filter}
-            onChange={setFilter}
-            groupOptions={groupOptions}
-            accountOptions={accountOptions}
+          <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
+            <HoldingsFilterBar
+              filter={filter}
+              onChange={setFilter}
+              groupOptions={groupOptions}
+              accountOptions={accountOptions}
+            />
+            <span className="shrink-0 text-xs text-muted-foreground">총 {filteredHoldings.length}개 종목</span>
+          </div>
+          <HoldingsTable
+            rows={filteredHoldings}
+            usdKrwRate={usdKrwRate}
+            onEdit={openEditModal}
+            onDelete={(id) => deleteHolding.mutate(id)}
           />
-          <HoldingsTable rows={filteredHoldings} onEdit={openEditModal} onDelete={(id) => deleteHolding.mutate(id)} />
         </>
       )}
 
