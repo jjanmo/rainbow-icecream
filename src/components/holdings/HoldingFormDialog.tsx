@@ -69,8 +69,8 @@ function AssetTypeHelp() {
               분류입니다(개별 주식·ETF·ETN·리츠·일반 펀드·채권·예수금). 정해진 값 중에서 고릅니다.
             </span>
             <span>
-              <span className="font-semibold text-foreground">자산군</span> — 내가 세운 투자 전략에 따라 직접
-              이름 붙인 그룹입니다(예: &ldquo;성장주&rdquo;, &ldquo;배당주&rdquo;). 목표 비중을 정하는 단위예요.
+              <span className="font-semibold text-foreground">자산군</span> — 내가 세운 투자 전략에 따라 직접 이름 붙인
+              그룹입니다(예: &ldquo;성장주&rdquo;, &ldquo;배당주&rdquo;). 목표 비중을 정하는 단위예요.
             </span>
           </PopoverDescription>
         </PopoverHeader>
@@ -186,7 +186,7 @@ export function HoldingFormDialog({
           <div className="flex gap-2.5">
             <div className="flex w-24 flex-col gap-1.5">
               <Label>
-                구분 <span className="text-destructive">*</span>
+                지역 <span className="text-destructive">*</span>
               </Label>
               <Select
                 items={REGION_ITEMS}
