@@ -1,21 +1,33 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
-import { ExecutionFormDialog, type ExecutionSubmit } from '@/components/journal/ExecutionFormDialog';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ExecutionDetailDialog } from '@/components/journal/ExecutionDetailDialog';
+import {
+  ExecutionFormDialog,
+  type ExecutionNoteDraft,
+  type ExecutionSubmit,
+} from '@/components/journal/ExecutionFormDialog';
+import {
+  ALL_EXECUTIONS_FILTER,
+  ExecutionsFilterBar,
+  matchesExecutionsFilter,
+  type ExecutionsFilter,
+} from '@/components/journal/ExecutionsFilterBar';
+import { ExecutionsTable } from '@/components/journal/ExecutionsTable';
 import { DataErrorNotice } from '@/components/shared/DataErrorNotice';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAddExecution, useDeleteExecution, useExecutions, useUpdateExecution } from '@/hooks/useExecutions';
 import { useGroups } from '@/hooks/useGroups';
 import { useAddHolding, useHoldings } from '@/hooks/useHoldings';
+import { useHistoricalFxRates } from '@/hooks/useHistoricalFxRates';
 import { useTradeNotes, useUpsertTradeNote } from '@/hooks/useTradeNotes';
 import { returnColor } from '@/lib/calc/rebalance';
-import { currencyOf } from '@/lib/journal/cost';
 import { OversoldError } from '@/lib/journal/commit';
-import { executionNoteKey, positionNoteKey } from '@/lib/journal/noteTarget';
 import { replayHolding, type ClosedLot } from '@/lib/journal/replay';
-import { fmtQty, fmtUsd, fmtWon } from '@/lib/format';
-import { INTENT_LABELS, type Execution, type NewExecution } from '@/types/journal';
+import { hasActivity, summarizeExecutions, type TradeSummary } from '@/lib/journal/summary';
+import { fmtUsd, fmtWon } from '@/lib/format';
+import type { Execution, NewExecution } from '@/types/journal';
 import type { Holding } from '@/types/domain';
 
 /** 로컬 시간대 기준 'YYYY-MM-DD'. 체결은 UTC로 저장되므로 표시 시점에 변환한다. */
@@ -47,21 +59,25 @@ export default function JournalPage() {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingExecution, setEditingExecution] = useState<Execution | null>(null);
+  const [filter, setFilter] = useState<ExecutionsFilter>(ALL_EXECUTIONS_FILTER);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [detailExecution, setDetailExecution] = useState<Execution | null>(null);
 
   const holdings = useMemo(() => holdingsQuery.data ?? [], [holdingsQuery.data]);
   const holdingById = useMemo(() => new Map(holdings.map((h) => [h.id, h])), [holdings]);
   const tradeNotes = useMemo(() => tradeNotesQuery.data ?? [], [tradeNotesQuery.data]);
-  // 셋업 태그 자동완성 후보 — holdings.tsx의 accountOptions와 같은 파생 패턴.
-  const setupTagSuggestions = useMemo(
-    () => [...new Set(tradeNotes.flatMap((n) => n.setupTags))].sort(),
-    [tradeNotes],
-  );
+  // 체결 id로 근거를 바로 찾을 수 있게 미리 맵으로 만들어 둔다.
+  const noteByExecutionId = useMemo(() => {
+    const map = new Map<string, (typeof tradeNotes)[number]>();
+    for (const n of tradeNotes) map.set(n.executionId, n);
+    return map;
+  }, [tradeNotes]);
 
+  // 기초잔고 체결도 이제 일지에 그대로 보인다 — 배지로 구분하고("기초잔고"), 실제
+  // 매매가 아니므로 매수/매도 합계 집계에서만 뺀다(아래 summary 계산부 참고) (ADR-0044).
   const executionsByDay = useMemo(() => {
     const map = new Map<string, Execution[]>();
     for (const e of executionsQuery.data ?? []) {
-      // 기초잔고는 실제 매매가 아니라 이월 잔고라서 일지에 섞지 않는다.
-      if (e.intent === 'OPENING_BALANCE') continue;
       const key = localDayKey(e.executedAt);
       const arr = map.get(key) ?? [];
       arr.push(e);
@@ -91,12 +107,38 @@ export default function JournalPage() {
   }, [executionsQuery.data, holdingById]);
 
   const monthPrefix = monthKey(cursor.year, cursor.month);
-  const monthCount = useMemo(
+  const monthExecutions = useMemo(
     () =>
       [...executionsByDay.entries()]
         .filter(([day]) => day.startsWith(monthPrefix))
-        .reduce((sum, [, list]) => sum + list.length, 0),
+        .flatMap(([, list]) => list),
     [executionsByDay, monthPrefix],
+  );
+  // 해외 체결이 있는 달만 과거 환율을 조회한다 — 국내만 거래하는 달에는 불필요한 호출.
+  const hasForeignExecutionThisMonth = useMemo(
+    () => monthExecutions.some((e) => holdingById.get(e.holdingId)?.region === '해외'),
+    [monthExecutions, holdingById],
+  );
+  const monthStart = `${monthPrefix}-01`;
+  const monthEnd = `${monthPrefix}-${String(new Date(cursor.year, cursor.month + 1, 0).getDate()).padStart(2, '0')}`;
+  const fxQuery = useHistoricalFxRates(monthStart, monthEnd, hasForeignExecutionThisMonth);
+  // 체결일 기준 USD→KRW 환율 조회 — 실현손익은 여전히 거래 통화 기준이 원본이고
+  // (ADR-0038), 이건 합계 표시에만 쓰는 참고용 환산이다.
+  const rateForExecution = useMemo(() => {
+    const rates = fxQuery.data?.rates;
+    if (!rates) return undefined;
+    return (e: Execution) => rates[localDayKey(e.executedAt)];
+  }, [fxQuery.data]);
+
+  const monthSummary = useMemo(
+    () =>
+      summarizeExecutions(
+        monthExecutions.filter((e) => e.intent !== 'OPENING_BALANCE'),
+        holdingById,
+        closedLotByExecutionId,
+        rateForExecution,
+      ),
+    [monthExecutions, holdingById, closedLotByExecutionId, rateForExecution],
   );
 
   // 달력 격자: 1일이 시작되는 요일만큼 앞을 비운다.
@@ -115,7 +157,37 @@ export default function JournalPage() {
   const isError = groupsQuery.isError || holdingsQuery.isError || executionsQuery.isError || tradeNotesQuery.isError;
   const error = groupsQuery.error ?? holdingsQuery.error ?? executionsQuery.error ?? tradeNotesQuery.error;
 
-  const dayList = selectedDay ? (executionsByDay.get(selectedDay) ?? []) : [];
+  const dayList = useMemo(
+    () => (selectedDay ? (executionsByDay.get(selectedDay) ?? []) : []),
+    [selectedDay, executionsByDay],
+  );
+  const daySummary = useMemo(
+    () =>
+      summarizeExecutions(
+        dayList.filter((e) => e.intent !== 'OPENING_BALANCE'),
+        holdingById,
+        closedLotByExecutionId,
+        rateForExecution,
+      ),
+    [dayList, holdingById, closedLotByExecutionId, rateForExecution],
+  );
+
+  // 우측 패널에 실제로 노출되는 범위 — 달력에서 고른 기간(일/월) 안에서만 필터가 동작한다.
+  const scopedExecutions = selectedDay ? dayList : monthExecutions;
+  const filteredExecutions = useMemo(
+    () => scopedExecutions.filter((e) => matchesExecutionsFilter(e, filter, holdingById.get(e.holdingId))),
+    [scopedExecutions, filter, holdingById],
+  );
+  // 종목 필터 선택지도 지금 보고 있는 기간에 실제로 등장하는 종목으로만 좁힌다.
+  const scopedHoldingOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const e of scopedExecutions) {
+      if (seen.has(e.holdingId)) continue;
+      const h = holdingById.get(e.holdingId);
+      if (h) seen.set(e.holdingId, h.ticker ? `${h.ticker} (${h.name})` : h.name);
+    }
+    return [...seen.entries()].map(([id, label]) => ({ id, label }));
+  }, [scopedExecutions, holdingById]);
 
   function shiftMonth(delta: number) {
     setSelectedDay(null);
@@ -141,6 +213,23 @@ export default function JournalPage() {
     setDialogOpen(true);
   }
 
+  function openDetailDialog(execution: Execution) {
+    setDetailExecution(execution);
+    setDetailDialogOpen(true);
+  }
+
+  function handleDetailEdit() {
+    if (!detailExecution) return;
+    setDetailDialogOpen(false);
+    openEditDialog(detailExecution);
+  }
+
+  function handleDetailDelete() {
+    if (!detailExecution) return;
+    setDetailDialogOpen(false);
+    handleDelete(detailExecution);
+  }
+
   async function handleSubmit(submit: ExecutionSubmit) {
     let holding: Holding;
     let execution: Execution;
@@ -164,10 +253,8 @@ export default function JournalPage() {
 
     // 체결은 이미 저장됐으므로, 근거 저장이 실패해도 롤백하지 않고 별도로 알린다.
     if (submit.note) {
-      const targetKey =
-        submit.note.targetType === 'POSITION' ? positionNoteKey(holding.id) : executionNoteKey(execution.id);
       try {
-        await upsertTradeNote.mutateAsync({ ...submit.note, targetKey });
+        await upsertTradeNote.mutateAsync({ ...submit.note, executionId: execution.id });
       } catch (err) {
         console.error('Failed to save trade note', err);
         toast.error('체결은 저장됐지만 근거 저장에 실패했습니다.');
@@ -175,7 +262,15 @@ export default function JournalPage() {
     }
   }
 
-  async function handleUpdate({ id, patch }: { id: string; patch: Omit<NewExecution, 'holdingId'> }) {
+  async function handleUpdate({
+    id,
+    patch,
+    note,
+  }: {
+    id: string;
+    patch: Omit<NewExecution, 'holdingId'>;
+    note?: ExecutionNoteDraft;
+  }) {
     const target = executionsQuery.data?.find((e) => e.id === id);
     const holding = target ? holdingById.get(target.holdingId) : undefined;
     if (!holding) return;
@@ -189,6 +284,16 @@ export default function JournalPage() {
       }
       console.error('Failed to update execution', err);
       toast.error('수정에 실패했습니다.');
+      return;
+    }
+
+    if (note) {
+      try {
+        await upsertTradeNote.mutateAsync({ ...note, executionId: id });
+      } catch (err) {
+        console.error('Failed to save trade note', err);
+        toast.error('체결은 수정됐지만 근거 저장에 실패했습니다.');
+      }
     }
   }
 
@@ -235,7 +340,7 @@ export default function JournalPage() {
                 <span className="text-[15px] font-semibold">
                   {cursor.year}년 {cursor.month + 1}월
                 </span>
-                <span className="text-xs text-muted-foreground">체결 {monthCount}건</span>
+                <span className="text-xs text-muted-foreground">체결 {monthExecutions.length}건</span>
               </div>
               <div className="flex gap-1">
                 <Button variant="ghost" size="icon-xs" onClick={() => shiftMonth(-1)} title="이전 달">
@@ -249,6 +354,10 @@ export default function JournalPage() {
                 </Button>
               </div>
             </div>
+
+            {hasActivity(monthSummary) && (
+              <TradeSummaryStrip summary={monthSummary} className="mb-3" fxLoading={fxQuery.isLoading} />
+            )}
 
             <div className="grid grid-cols-7 gap-1 text-center">
               {WEEKDAYS.map((w) => (
@@ -286,23 +395,26 @@ export default function JournalPage() {
               페이지 자체가 스크롤되면서 달력이 화면 밖으로 밀려나지 않게 하기 위해서다.
               높이 값은 상단 네비게이션 + 페이지 헤더가 차지하는 대략적인 여백을 뺀 값이다. */}
           <div className="flex min-w-0 flex-1 flex-col rounded-lg border border-border bg-card p-4 sm:p-5 lg:max-h-[calc(100vh-220px)]">
-            <div className="mb-3 shrink-0 text-[13px] font-semibold">
-              {selectedDay ? `${selectedDay} 체결` : `${cursor.month + 1}월 전체 체결`}
+            <div className="mb-3 shrink-0">
+              <div className="text-[13px] font-semibold">
+                {selectedDay ? `${selectedDay} 체결` : `${cursor.month + 1}월 전체 체결`}
+              </div>
+              {selectedDay && hasActivity(daySummary) && (
+                <TradeSummaryStrip summary={daySummary} className="mt-2" fxLoading={fxQuery.isLoading} />
+              )}
             </div>
-            <div className="min-h-0 overflow-y-auto">
-              <ExecutionList
-                executions={
-                  selectedDay
-                    ? dayList
-                    : [...executionsByDay.entries()]
-                        .filter(([d]) => d.startsWith(monthPrefix))
-                        .flatMap(([, list]) => list)
-                        .sort((a, b) => b.executedAt.localeCompare(a.executedAt))
-                }
+            {scopedExecutions.length > 0 && (
+              <div className="mb-3 shrink-0">
+                <ExecutionsFilterBar filter={filter} onChange={setFilter} holdingOptions={scopedHoldingOptions} />
+              </div>
+            )}
+            <div className="scrollbar-hidden min-h-0 overflow-y-auto">
+              <ExecutionsTable
+                executions={filteredExecutions}
                 holdingById={holdingById}
                 closedLotByExecutionId={closedLotByExecutionId}
-                onEdit={openEditDialog}
-                onDelete={handleDelete}
+                rateForExecution={rateForExecution}
+                onRowClick={openDetailDialog}
               />
             </div>
           </div>
@@ -313,88 +425,127 @@ export default function JournalPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         holdings={holdings}
+        executions={executionsQuery.data ?? []}
         groupOptions={(groupsQuery.data ?? []).map((g) => ({ id: g.id, name: g.name }))}
         tradeNotes={tradeNotes}
-        setupTagSuggestions={setupTagSuggestions}
         onSubmit={handleSubmit}
         editingExecution={editingExecution}
         onUpdate={handleUpdate}
+      />
+
+      <ExecutionDetailDialog
+        execution={detailExecution}
+        open={detailDialogOpen}
+        onOpenChange={setDetailDialogOpen}
+        holding={detailExecution ? holdingById.get(detailExecution.holdingId) : undefined}
+        closedLot={detailExecution ? closedLotByExecutionId.get(detailExecution.id) : undefined}
+        note={detailExecution ? noteByExecutionId.get(detailExecution.id) : undefined}
+        krwRate={detailExecution ? rateForExecution?.(detailExecution) : undefined}
+        onEdit={handleDetailEdit}
+        onDelete={handleDetailDelete}
       />
     </div>
   );
 }
 
-function ExecutionList({
-  executions,
-  holdingById,
-  closedLotByExecutionId,
-  onEdit,
-  onDelete,
+/**
+ * 매수/매도/실현손익 × 해외/국내/합계 요약 표. 해외 행은 원화(환산) 위에 원래
+ * 통화(달러)를 작게 병기하고, 국내·합계 행은 원화만 보여준다 — 국내는 애초에
+ * 환산이 필요 없고, 합계는 통화가 섞인 기간을 하나의 숫자로 읽기 위한 참고값이라
+ * 그 자체를 달러와 병기할 대상이 없다. 실현손익 원본(달러/원화 각각)은 여전히
+ * 거래 통화 기준 그대로다 — ADR-0038이 금지한 "실현손익 자체를 환산값으로 대체"는
+ * 하지 않는다.
+ */
+function TradeSummaryStrip({
+  summary,
+  className = '',
+  fxLoading = false,
 }: {
-  executions: Execution[];
-  holdingById: Map<string, Holding>;
-  closedLotByExecutionId: Map<string, ClosedLot>;
-  onEdit: (execution: Execution) => void;
-  onDelete: (execution: Execution) => void;
+  summary: TradeSummary;
+  className?: string;
+  fxLoading?: boolean;
 }) {
-  if (executions.length === 0) {
-    return <p className="text-xs text-muted-foreground">기록된 체결이 없습니다.</p>;
+  return (
+    <div className={`rounded-md bg-muted/50 p-2 text-[11px] ${className}`}>
+      <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr] items-start gap-x-2 gap-y-1.5">
+        <div />
+        <div className="text-center text-muted-foreground">매수</div>
+        <div className="text-center text-muted-foreground">매도</div>
+        <div className="text-center text-muted-foreground">실현손익</div>
+
+        <div className="pt-1 text-muted-foreground">해외</div>
+        <AmountCell krw={summary.foreignKrw.buy} usd={summary.foreignUsd.buy} color="var(--diff-rise)" loading={fxLoading} />
+        <AmountCell krw={summary.foreignKrw.sell} usd={summary.foreignUsd.sell} color="var(--diff-fall)" loading={fxLoading} />
+        <AmountCell krw={summary.foreignKrw.realizedPnl} usd={summary.foreignUsd.realizedPnl} signed loading={fxLoading} />
+
+        <div className="pt-1 text-muted-foreground">국내</div>
+        <AmountCell krw={summary.domestic.buy} color="var(--diff-rise)" />
+        <AmountCell krw={summary.domestic.sell} color="var(--diff-fall)" />
+        <AmountCell krw={summary.domestic.realizedPnl} signed />
+
+        <div className="border-t border-border pt-1.5 font-semibold text-muted-foreground">합계</div>
+        <AmountCell krw={summary.totalKrw.buy} color="var(--diff-rise)" bold loading={fxLoading} border />
+        <AmountCell krw={summary.totalKrw.sell} color="var(--diff-fall)" bold loading={fxLoading} border />
+        <AmountCell krw={summary.totalKrw.realizedPnl} signed bold loading={fxLoading} border />
+      </div>
+      {summary.krwEquivalentIncomplete && !fxLoading && (
+        <div className="mt-1.5 text-[10px] text-muted-foreground">* 일부 날짜는 환율을 못 구해 원화 값에서 빠졌습니다.</div>
+      )}
+    </div>
+  );
+}
+
+function AmountCell({
+  krw,
+  usd,
+  color,
+  signed = false,
+  bold = false,
+  loading = false,
+  border = false,
+}: {
+  krw: number;
+  usd?: number;
+  color?: string;
+  signed?: boolean;
+  bold?: boolean;
+  loading?: boolean;
+  border?: boolean;
+}) {
+  const isForeign = usd !== undefined;
+  const nativeZero = isForeign ? usd === 0 : krw === 0;
+  const borderCls = border ? 'border-t border-border pt-1.5' : '';
+
+  if (nativeZero) {
+    return <div className={`text-center text-muted-foreground ${borderCls}`}>—</div>;
+  }
+
+  const sign = (n: number) => (signed && n > 0 ? '+' : '');
+
+  if (isForeign && loading) {
+    return (
+      <div className={`text-center ${borderCls}`}>
+        <span className="font-mono">
+          {sign(usd)}
+          {fmtUsd(usd)}
+        </span>
+        <span className="block text-[10px] text-muted-foreground">환율 조회 중...</span>
+      </div>
+    );
   }
 
   return (
-    <div className="flex flex-col">
-      {executions.map((e) => {
-        const holding = holdingById.get(e.holdingId);
-        const currency = holding ? currencyOf(holding.region) : 'KRW';
-        const fmt = (n: number) => (currency === 'USD' ? fmtUsd(n) : fmtWon(n));
-        const isBuy = e.side === 'BUY';
-        const closedLot = closedLotByExecutionId.get(e.id);
-        return (
-          <div
-            key={e.id}
-            className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-border py-2.5 first:border-t-0"
-          >
-            <span
-              className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold"
-              style={{ color: isBuy ? 'var(--diff-rise)' : 'var(--diff-fall)' }}
-            >
-              {isBuy ? '매수' : '매도'}
-            </span>
-            <span className="text-[13px] font-semibold">{holding?.name ?? '삭제된 종목'}</span>
-            {holding?.ticker && (
-              <span className="font-mono text-[11px] text-muted-foreground">{holding.ticker}</span>
-            )}
-            <span className="text-[11px] text-muted-foreground">{INTENT_LABELS[e.intent]}</span>
-            {closedLot && (
-              <span className="font-mono text-[11px] font-semibold" style={{ color: returnColor(closedLot.realizedPnl) }}>
-                실현손익 {closedLot.realizedPnl >= 0 ? '+' : ''}
-                {fmt(closedLot.realizedPnl)}
-              </span>
-            )}
-            <span className="ml-auto shrink-0 font-mono text-xs">
-              {fmtQty(e.qty)} × {fmt(e.price)}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => onEdit(e)}
-              className="shrink-0 text-muted-foreground"
-              title="체결 수정"
-            >
-              <Pencil className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => onDelete(e)}
-              className="shrink-0 text-muted-foreground"
-              title="체결 삭제 (이후 구간 재계산)"
-            >
-              <Trash2 className="size-3.5" />
-            </Button>
-          </div>
-        );
-      })}
+    <div
+      className={`text-center font-mono ${bold ? 'font-semibold' : ''} ${borderCls}`}
+      style={{ color: signed ? returnColor(krw) : color }}
+    >
+      {sign(krw)}
+      {fmtWon(krw)}
+      {isForeign && (
+        <span className="block text-[10px] font-normal text-muted-foreground">
+          {krw === 0 ? '환율 미확인' : `(${sign(usd)}${fmtUsd(usd)})`}
+        </span>
+      )}
     </div>
   );
 }

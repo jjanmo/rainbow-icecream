@@ -1,7 +1,7 @@
 # ADR-0022: 종목 추가/수정 모달에 원화/달러 체크박스로 현금성 자산 등록 경로 복구
 
 ## Status
-Accepted
+Partially superseded by [ADR-0044](./0044-holdings-balance-write-only-via-journal.md) — 현금성 자산을 새로 만들거나 금액을 정하는 건 매매일지의 "+ 새 종목" 흐름으로 옮겨갔다. `HoldingFormDialog`는 기존 현금성 종목의 티커 입력을 비활성화해 두는 표시 로직만 남아 있다.
 
 ## Context
 `lib/calc/rebalance.ts`는 원래부터 `ticker: null`인 종목을 "시세 조회 없이 평균매입가를 그대로 평가금으로 쓰는" 현금성 자산으로 취급해왔다. 하지만 이후 `HoldingFormDialog`가 모든 추가/수정에 비어있지 않은 티커/코드를 요구하도록 바뀌면서, 이 상태를 UI로 만들거나 유지할 방법이 없어졌다 — 기존에 `ticker: null`이던 행만 남아있고, 그 행을 수정하려는 순간 티커 입력을 강제당했다. 예적금·파킹통장처럼 티커가 없는 보유 항목을 다시 등록/수정할 수 있어야 한다는 요청이 있었다.

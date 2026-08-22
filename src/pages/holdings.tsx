@@ -86,7 +86,8 @@ export default function HoldingsPage() {
           if (editingHolding) {
             updateHolding.mutate({ id: editingHolding.id, patch: holding });
           } else {
-            addHolding.mutate(holding);
+            // 새 종목은 항상 수량 0으로 시작한다 — 매매일지의 첫 체결이 채운다 (ADR-0044).
+            addHolding.mutate({ ...holding, qty: 0, avgPrice: 0 });
           }
         }}
       />

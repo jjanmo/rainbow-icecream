@@ -1,7 +1,7 @@
 # ADR-0039: 매매일지에 체결 수정 진입점을 추가하고, 종목 재배정은 지원하지 않는다
 
 ## Status
-Accepted
+Accepted — 아래 "근거 섹션은 숨긴다"/"매매 의도" 관련 서술은 [ADR-0041](./0041-simplify-intent-and-trade-notes.md)로 대체됨 (근거는 EXECUTION 전용이 되어 수정 모드에서도 편집 가능, 매매 의도 자체가 없어짐). 나머지(종목 고정, 오버셀 서버 판단)는 유지.
 
 ## Context
 

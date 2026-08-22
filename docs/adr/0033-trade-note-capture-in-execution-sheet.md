@@ -1,7 +1,7 @@
 # ADR-0033: 근거·태그는 체결 입력 시트 안에서 접이식으로 받고, 매도 시 매수 근거를 배너로 띄운다
 
 ## Status
-Accepted
+Superseded by [ADR-0041](./0041-simplify-intent-and-trade-notes.md) — 접이식 UI와 매수/매도 필드 분리, 매도 시 매수 근거 배너가 모두 사라졌다. "매도 시 매수 근거 노출" 취지 자체는 [ADR-0044](./0044-holdings-balance-write-only-via-journal.md)에서 다른 형태(POSITION 노트 하나가 아니라 체결마다 쌓인 메모 목록)로 되살아났다.
 
 ## Context
 

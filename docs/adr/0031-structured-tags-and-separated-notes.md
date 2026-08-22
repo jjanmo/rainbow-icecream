@@ -1,7 +1,7 @@
 # ADR-0031: 정성 데이터는 구조화 태그를 우선하고, 노트는 체결과 분리한다
 
 ## Status
-Accepted
+Partially superseded by [ADR-0041](./0041-simplify-intent-and-trade-notes.md) — 구조화 필드(setupTags 이외)는 제거되고 태그+자유서술로 단순화됐다. "노트를 체결과 분리한다"는 결정 자체는 유지된다.
 
 ## Context
 

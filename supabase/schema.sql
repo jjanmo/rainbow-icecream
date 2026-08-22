@@ -84,7 +84,7 @@ create policy "own holdings" on holdings
   );
 
 -- ---------------------------------------------------------------------------
--- 매매일지 (trading journal) — ADR-0027 ~ 0032
+-- 매매일지 (trading journal) — ADR-0027 ~ 0032, 0041
 -- ---------------------------------------------------------------------------
 
 -- The execution ledger. Single write path for 보유수량/평균매입가 (ADR-0027):
@@ -96,9 +96,9 @@ create table if not exists executions (
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   holding_id uuid not null references holdings(id) on delete cascade,
   side text not null check (side in ('BUY', 'SELL')),
-  intent text not null default 'NEW' check (
-    intent in ('OPENING_BALANCE', 'NEW', 'ADD', 'SCALE_OUT', 'EXIT', 'STOP_LOSS', 'REBALANCE', 'CORPORATE_ACTION')
-  ),
+  -- 세부 매매 의도(신규진입/추가매수/...) 구분은 뺐다 (ADR-0041) — OPENING_BALANCE
+  -- 표시(기초잔고 vs 실제 매매 구분, ADR-0027)만 유지하면 되고 나머지는 UI에서 안 쓴다.
+  intent text not null default 'NEW' check (intent in ('OPENING_BALANCE', 'NEW')),
   executed_at timestamptz not null,
   qty numeric not null check (qty > 0),
   /** In the holding's native currency (KRW for 국내, USD for 해외). */
@@ -123,33 +123,22 @@ create index if not exists executions_user_time_idx
 create unique index if not exists executions_one_opening_balance_idx
   on executions (holding_id) where intent = 'OPENING_BALANCE' and deleted_at is null;
 
--- Qualitative record, deliberately NOT columns on executions: a position built
--- from three buys has one 라지, not three (ADR-0031).
+-- Qualitative record, deliberately NOT columns on executions: 체결과 분리된
+-- 별도 엔티티로 두는 이유는 ADR-0031 그대로다. 구조화 필드(태그 포함)는 전부
+-- 없애고 자유 서술 하나로 단순화했고, 체결 하나당 노트 하나로 고정했다 (ADR-0043,
+-- ADR-0041/0042가 시작한 단순화의 마지막 단계 — POSITION/DAY 타겟팅 자체를 없앴다).
 create table if not exists trade_notes (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
-  target_type text not null check (target_type in ('EXECUTION', 'POSITION', 'DAY')),
-  /** executionId | holdingId | 'YYYY-MM-DD' — see lib/journal/noteTarget.ts. */
-  target_key text not null,
-  setup_tags text[] not null default '{}',
-  emotion_tags text[] not null default '{}',
-  exit_reason text check (
-    exit_reason is null
-    or exit_reason in ('THESIS_MET', 'THESIS_BROKEN', 'REBALANCE', 'STOP_HIT', 'EMOTIONAL')
-  ),
-  followed_plan boolean,
-  /** 라지가 무효화되는 조건. POSITION 노트의 핵심 필드. */
-  invalidation_condition text,
-  stop_price numeric check (stop_price is null or stop_price >= 0),
-  target_price numeric check (target_price is null or target_price >= 0),
-  /** 자유 서술 — 어떤 집계에도 쓰이지 않는다 (ADR-0031). */
+  execution_id uuid not null references executions(id) on delete cascade,
+  /** 자유 서술 — 어떤 집계에도 쓰이지 않는다. */
   body text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-create unique index if not exists trade_notes_target_idx
-  on trade_notes (user_id, target_type, target_key);
+create unique index if not exists trade_notes_execution_idx
+  on trade_notes (execution_id);
 
 drop trigger if exists executions_set_updated_at on executions;
 create trigger executions_set_updated_at
@@ -174,11 +163,15 @@ create policy "own executions" on executions
     and holding_id in (select id from holdings where user_id = auth.uid())
   );
 
+-- trade_notes: own the row AND own the execution it points to (같은 패턴을 executions에도 쓴다).
 drop policy if exists "own trade notes" on trade_notes;
 create policy "own trade notes" on trade_notes
   for all
   using (user_id = auth.uid())
-  with check (user_id = auth.uid());
+  with check (
+    user_id = auth.uid()
+    and execution_id in (select id from executions where user_id = auth.uid())
+  );
 
 -- ---------------------------------------------------------------------------
 -- Migration: absorb each existing holding's balance as an OPENING_BALANCE
@@ -224,3 +217,86 @@ alter table executions drop column if exists fx_rate;
 alter table holdings drop constraint if exists holdings_group_id_fkey;
 alter table holdings add constraint holdings_group_id_fkey
   foreign key (group_id) references asset_groups(id) on delete restrict;
+
+-- ---------------------------------------------------------------------------
+-- Migration: 매매 의도 세부 구분 제거 + 근거를 태그·자유서술로 단순화 (ADR-0041).
+-- 기존 값이 있으면 잃지 않도록 삭제될 필드들을 body에 접어 넣은 뒤 컬럼을 없앤다.
+-- Idempotent.
+-- ---------------------------------------------------------------------------
+update executions set intent = 'NEW' where intent not in ('OPENING_BALANCE', 'NEW');
+
+alter table executions drop constraint if exists executions_intent_check;
+alter table executions add constraint executions_intent_check
+  check (intent in ('OPENING_BALANCE', 'NEW'));
+
+update trade_notes set body = nullif(trim(both E'\n' from
+  coalesce(body, '')
+  || case when invalidation_condition is not null then E'\n청산조건: ' || invalidation_condition else '' end
+  || case when stop_price is not null then E'\n손절가: ' || stop_price::text else '' end
+  || case when target_price is not null then E'\n목표가: ' || target_price::text else '' end
+  || case when exit_reason is not null then E'\n매도사유: ' || exit_reason else '' end
+  || case when followed_plan is not null then E'\n계획대로: ' || (case when followed_plan then '예' else '아니오' end) else '' end
+  || case when coalesce(array_length(emotion_tags, 1), 0) > 0 then E'\n감정: ' || array_to_string(emotion_tags, ', ') else '' end
+), '')
+where invalidation_condition is not null or stop_price is not null or target_price is not null
+   or exit_reason is not null or followed_plan is not null or coalesce(array_length(emotion_tags, 1), 0) > 0;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'trade_notes' and column_name = 'setup_tags'
+  ) then
+    alter table trade_notes rename column setup_tags to tags;
+  end if;
+end $$;
+
+alter table trade_notes drop column if exists emotion_tags;
+alter table trade_notes drop column if exists exit_reason;
+alter table trade_notes drop column if exists followed_plan;
+alter table trade_notes drop column if exists invalidation_condition;
+alter table trade_notes drop column if exists stop_price;
+alter table trade_notes drop column if exists target_price;
+
+-- ---------------------------------------------------------------------------
+-- Migration: 태그 기능 제거 (ADR-0042) — 근거는 자유 서술(body) 하나로만 남는다.
+-- Idempotent.
+-- ---------------------------------------------------------------------------
+alter table trade_notes drop column if exists tags;
+
+-- ---------------------------------------------------------------------------
+-- Migration: target_type/target_key 제거, execution_id FK로 교체 (ADR-0043).
+-- target_type은 이제 항상 'EXECUTION'이라 의미가 없었다. POSITION 노트(예전
+-- 방식)가 있으면 내용을 잃지 않도록 그 종목의 가장 이른 체결로 옮긴 뒤 없앤다.
+-- Idempotent.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'trade_notes' and column_name = 'target_type'
+  ) then
+    update trade_notes tn
+    set target_type = 'EXECUTION',
+        target_key = (
+          select e.id::text from executions e
+          where e.holding_id = tn.target_key::uuid and e.deleted_at is null
+          order by e.executed_at asc, e.id asc
+          limit 1
+        )
+    where tn.target_type = 'POSITION'
+      and exists (
+        select 1 from executions e where e.holding_id = tn.target_key::uuid and e.deleted_at is null
+      );
+
+    alter table trade_notes rename column target_key to execution_id;
+    alter table trade_notes alter column execution_id type uuid using execution_id::uuid;
+    alter table trade_notes add constraint trade_notes_execution_id_fkey
+      foreign key (execution_id) references executions(id) on delete cascade;
+
+    drop index if exists trade_notes_target_idx;
+    create unique index if not exists trade_notes_execution_idx on trade_notes (execution_id);
+
+    alter table trade_notes drop column if exists target_type;
+  end if;
+end $$;

@@ -1,7 +1,7 @@
 # ADR-0027: 보유 수량·평균매입가는 체결 원장에서만 계산한다 (기존 보유는 기초잔고 체결로 흡수)
 
 ## Status
-Accepted
+Accepted — "수동 보유 편집 UI 제거는 하지 않는다"는 절충은 [ADR-0044](./0044-holdings-balance-write-only-via-journal.md)에서 뒤집혔다. 그 절충이 실제로 두 건의 수량 드리프트를 냈다.
 
 ## Context
 

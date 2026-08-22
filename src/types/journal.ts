@@ -1,20 +1,12 @@
-/** 매매일지 도메인 타입. 계산 규칙은 lib/journal/ 에, 결정 근거는 ADR-0027~0032. */
+/** 매매일지 도메인 타입. 계산 규칙은 lib/journal/ 에, 결정 근거는 ADR-0027~0032, 0041~0043. */
 
 export type Side = "BUY" | "SELL";
 
+/** 세부 매매 의도(신규진입/추가매수/...) 구분은 뺐다 (ADR-0041) — OPENING_BALANCE로
+ * 기초잔고와 실제 매매만 구분하면 되고, 그 외 구분은 UI에서 쓰지 않는다. */
 export type ExecutionIntent =
   | "OPENING_BALANCE" // 매매일지 도입 전부터 들고 있던 잔고 (ADR-0027)
-  | "NEW" // 신규 진입
-  | "ADD" // 추가매수
-  | "SCALE_OUT" // 분할 익절
-  | "EXIT" // 전량 청산
-  | "STOP_LOSS" // 손절
-  | "REBALANCE" // 비중 조정
-  | "CORPORATE_ACTION"; // 액면분할/무상증자 등 수동 조정 탈출구
-
-export type ExitReason = "THESIS_MET" | "THESIS_BROKEN" | "REBALANCE" | "STOP_HIT" | "EMOTIONAL";
-
-export type NoteTargetType = "EXECUTION" | "POSITION" | "DAY";
+  | "NEW"; // 사용자가 기록한 실제 매매 — 매수/매도 모두 이 값 하나
 
 /**
  * 체결 원장 한 건. 이 앱에서 보유수량·평균매입가를 바꾸는 유일한 경로다 —
@@ -43,53 +35,18 @@ export interface Execution {
 export type NewExecution = Omit<Execution, "id" | "userId" | "createdAt">;
 
 /**
- * 정성 기록. 체결과 분리된 별도 엔티티다 — 분할 매수를 3번 해도 매매 근거는
- * 하나여야 하므로 체결 컬럼으로 인라인하지 않는다 (ADR-0031).
+ * 정성 기록. 체결과 분리된 별도 엔티티다(ADR-0031). 구조화 필드(셋업/감정 태그,
+ * 매도사유, 계획 여부, 청산조건, 손절가/목표가)는 자유 서술 하나로 단순화했고
+ * (ADR-0041/0042), 체결 하나당 노트 하나로 고정했다 — POSITION/DAY 같은 다른
+ * 대상에 붙는 노트는 더 이상 없다 (ADR-0043).
  */
 export interface TradeNote {
   id: string;
   userId: string;
-  targetType: NoteTargetType;
-  /** EXECUTION → executionId, POSITION → holdingId, DAY → 'YYYY-MM-DD' */
-  targetKey: string;
-  /** 사용자 정의 허용. 집계의 기반이므로 자동완성으로 재사용을 유도한다. */
-  setupTags: string[];
-  /** 고정 열거형. 자유 입력을 허용하지 않는다. */
-  emotionTags: string[];
-  exitReason: ExitReason | null;
-  followedPlan: boolean | null;
-  /** 매매 근거가 깨지는 조건. 이게 없으면 "근거 훼손"과 "감정적 이탈"을 구분할 수 없다. */
-  invalidationCondition: string | null;
-  stopPrice: number | null;
-  targetPrice: number | null;
+  executionId: string;
   /** 자유 서술 — 어떤 집계에도 쓰이지 않는다. */
   body: string | null;
   createdAt: string;
 }
 
 export type NewTradeNote = Omit<TradeNote, "id" | "userId" | "createdAt">;
-
-export const EMOTION_TAGS = ["조급함", "FOMO", "복수매매", "확신과잉", "무감정"] as const;
-
-export const EXIT_REASON_LABELS: Record<ExitReason, string> = {
-  THESIS_MET: "근거 달성",
-  THESIS_BROKEN: "근거 훼손",
-  REBALANCE: "리밸런싱",
-  STOP_HIT: "손절",
-  EMOTIONAL: "감정적 이탈",
-};
-
-export const INTENT_LABELS: Record<ExecutionIntent, string> = {
-  OPENING_BALANCE: "기초잔고",
-  NEW: "신규진입",
-  ADD: "추가매수",
-  SCALE_OUT: "분할익절",
-  EXIT: "전량청산",
-  STOP_LOSS: "손절",
-  REBALANCE: "리밸런싱",
-  CORPORATE_ACTION: "권리변동",
-};
-
-/** 매수/매도 각각에서 고를 수 있는 의도. 기초잔고·권리변동은 사용자가 직접 고르지 않는다. */
-export const BUY_INTENTS: ExecutionIntent[] = ["NEW", "ADD", "REBALANCE"];
-export const SELL_INTENTS: ExecutionIntent[] = ["SCALE_OUT", "EXIT", "STOP_LOSS", "REBALANCE"];

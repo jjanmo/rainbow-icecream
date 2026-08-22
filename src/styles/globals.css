@@ -170,3 +170,12 @@ body {
     @apply font-sans;
   }
 }
+
+/* 스크롤은 유지하되 스크롤바만 숨긴다 (매매일지 체결 목록 패널 등). */
+.scrollbar-hidden {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* Edge/IE */
+}
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}

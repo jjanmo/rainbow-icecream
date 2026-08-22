@@ -27,7 +27,7 @@
 | [0019](./0019-group-dnd-and-derived-color.md) | 자산군 드래그 재정렬 + 위치 기반 자동 색상 (수동 색상 설정 제거) | Accepted |
 | [0020](./0020-setup-donut-chart.md) | 설정 페이지 상단을 바 차트에서 도넛 차트로 교체 | Accepted |
 | [0021](./0021-setup-holding-panels.md) | 설정 페이지 종목 표시 — 읽기 2컬럼 파이+리스트, 편집 접힌 줄 요약 | Accepted |
-| [0022](./0022-cash-like-holding-entry.md) | 종목 모달에 원화/달러 체크박스로 현금성 자산 등록 경로 복구 | Accepted |
+| [0022](./0022-cash-like-holding-entry.md) | 종목 모달에 원화/달러 체크박스로 현금성 자산 등록 경로 복구 | Partially superseded by ADR-0044 |
 | [0023](./0023-rebalance-page-dedup.md) | 비중 체크 페이지에서 설정/보유종목 페이지와 중복되는 내용 제거 | Accepted |
 | [0024](./0024-group-level-rebalance-only.md) | 리밸런싱 판단은 자산군 단위로만 (종목 단위 목표/괴리 제거) | Accepted |
 | [0025](./0025-holding-color-pinned-to-creation-order.md) | 종목 색상은 최초 생성 순서에 고정 (드래그 재정렬과 분리) | Superseded by ADR-0040 |
@@ -36,9 +36,9 @@
 | [0028](./0028-derive-fees-and-taxes.md) | 수수료·증권거래세는 계산하고 체결에 스냅샷 (국내 ETF 매도 면세) | Superseded by ADR-0034 |
 | [0029](./0029-fx-rate-snapshot.md) | 환율은 체결 시점 값 고정 저장, 환전 스프레드는 별도 비용 아님 | Superseded by ADR-0038 |
 | [0030](./0030-number-with-rounding-guard.md) | 금액은 number 유지 + 반올림 경계에서 표현 오차 봉쇄 | Accepted |
-| [0031](./0031-structured-tags-and-separated-notes.md) | 정성 데이터는 구조화 태그 우선, 노트는 체결과 분리 | Accepted |
+| [0031](./0031-structured-tags-and-separated-notes.md) | 정성 데이터는 구조화 태그 우선, 노트는 체결과 분리 | Partially superseded by ADR-0041 |
 | [0032](./0032-soft-delete-and-full-replay.md) | 체결 수정·삭제는 soft delete + 해당 종목 전체 리플레이 | Accepted |
-| [0033](./0033-trade-note-capture-in-execution-sheet.md) | 근거·태그를 체결 입력 시트에서 접이식으로, 매도 시 매수 근거 배너 표시 | Accepted |
+| [0033](./0033-trade-note-capture-in-execution-sheet.md) | 근거·태그를 체결 입력 시트에서 접이식으로, 매도 시 매수 근거 배너 표시 | Superseded by ADR-0041 |
 | [0034](./0034-remove-fee-tax-modeling.md) | 수수료·증권거래세 계산 제거, 환율만 유지 | Accepted |
 | [0035](./0035-group-delete-reassigns-to-unclassified.md) | 자산군 삭제는 하위 종목을 지우지 않고 "미분류"로 이동 | Accepted |
 | [0036](./0036-holding-crud-moved-to-holdings-page.md) | 종목 CRUD를 보유종목 페이지로 일원화, 설정 페이지엔 자산군 간 dnd 추가 | Accepted |
@@ -46,6 +46,10 @@
 | [0038](./0038-drop-fx-rate-native-currency-pnl.md) | 체결에 환율을 저장하지 않고, 실현손익은 거래 통화 기준으로만 표시 | Accepted |
 | [0039](./0039-execution-edit-entry-point.md) | 매매일지에 체결 수정 진입점 추가, 종목 재배정은 미지원 | Accepted |
 | [0040](./0040-remove-per-holding-color.md) | 종목별 색상을 없앰 (자산군 색은 유지) | Accepted |
+| [0041](./0041-simplify-intent-and-trade-notes.md) | 매매 의도 세부 구분 제거, 근거를 태그+자유서술로 단순화 | Partially superseded by ADR-0042 |
+| [0042](./0042-remove-trade-note-tags.md) | 근거 태그 제거, 자유 서술만 남김 | Accepted |
+| [0043](./0043-drop-note-target-type.md) | trade_notes의 target_type/target_key를 없애고 execution_id FK로 교체 | Accepted |
+| [0044](./0044-holdings-balance-write-only-via-journal.md) | holdings.qty/avg_price는 매매일지를 통해서만 변경 (보유종목 화면은 읽기 전용) | Accepted |
 
 ## 새 ADR 작성 형식
 
