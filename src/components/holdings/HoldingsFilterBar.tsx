@@ -1,16 +1,16 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { Region } from "@/types/domain";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { Region } from '@/types/domain';
 
 export interface HoldingsFilter {
   groupId: string; // "all" | asset group id
   account: string; // "all" | account name
-  region: Region | "all";
+  region: Region | 'all';
 }
 
 export const ALL_HOLDINGS_FILTER: HoldingsFilter = {
-  groupId: "all",
-  account: "all",
-  region: "all",
+  groupId: 'all',
+  account: 'all',
+  region: 'all',
 };
 
 function FilterSelect({
@@ -27,7 +27,7 @@ function FilterSelect({
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-xs text-muted-foreground">{label}</span>
-      <Select items={items} value={value} onValueChange={(v) => onChange(v ?? "all")}>
+      <Select items={items} value={value} onValueChange={(v) => onChange(v ?? 'all')}>
         <SelectTrigger size="sm" className="w-28">
           <SelectValue />
         </SelectTrigger>
@@ -54,27 +54,21 @@ export function HoldingsFilterBar({
   groupOptions: { id: string; name: string }[];
   accountOptions: string[];
 }) {
-  const groupItems = [
-    { label: "전체", value: "all" },
-    ...groupOptions.map((g) => ({ label: g.name, value: g.id })),
-  ];
-  const accountItems = [
-    { label: "전체", value: "all" },
-    ...accountOptions.map((a) => ({ label: a, value: a })),
-  ];
+  const groupItems = [{ label: '전체', value: 'all' }, ...groupOptions.map((g) => ({ label: g.name, value: g.id }))];
+  const accountItems = [{ label: '전체', value: 'all' }, ...accountOptions.map((a) => ({ label: a, value: a }))];
   const regionItems = [
-    { label: "전체", value: "all" },
-    { label: "국내", value: "국내" },
-    { label: "해외", value: "해외" },
+    { label: '전체', value: 'all' },
+    { label: '국내', value: '국내' },
+    { label: '해외', value: '해외' },
   ];
 
   return (
-    <div className="mb-3.5 flex flex-wrap gap-3">
+    <div className="flex flex-wrap gap-3">
       <FilterSelect
-        label="구분"
+        label="지역"
         value={filter.region}
         items={regionItems}
-        onChange={(region) => onChange({ ...filter, region: region as Region | "all" })}
+        onChange={(region) => onChange({ ...filter, region: region as Region | 'all' })}
       />
       <FilterSelect
         label="자산군"
