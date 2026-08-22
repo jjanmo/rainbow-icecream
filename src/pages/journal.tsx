@@ -758,14 +758,8 @@ export default function JournalPage() {
             closedLotByExecutionId={closedLotByExecutionId}
             showDateColumn={false}
             showRealizedPnlColumn={false}
-            onEdit={(execution) => {
-              setOpeningBalanceListOpen(false);
-              openEditDialog(execution);
-            }}
-            onDelete={(execution) => {
-              setOpeningBalanceListOpen(false);
-              setDeleteTarget(execution);
-            }}
+            onEdit={openEditDialog}
+            onDelete={setDeleteTarget}
           />
         </DialogContent>
       </Dialog>
