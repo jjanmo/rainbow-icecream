@@ -2,6 +2,14 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from '@/components/ui/combobox';
+import {
   ExecutionFormDialog,
   type ExecutionNoteDraft,
   type ExecutionSubmit,
@@ -27,10 +35,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 import { useAddExecution, useDeleteExecution, useExecutions, useUpdateExecution } from '@/hooks/useExecutions';
 import { useGroups } from '@/hooks/useGroups';
 import { useAddHolding, useHoldings } from '@/hooks/useHoldings';
+import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { useHistoricalFxRates } from '@/hooks/useHistoricalFxRates';
 import { useTradeNotes, useUpsertTradeNote } from '@/hooks/useTradeNotes';
 import { returnColor } from '@/lib/calc/rebalance';
@@ -38,7 +49,7 @@ import { OversoldError } from '@/lib/journal/commit';
 import { replayHolding, type ClosedLot } from '@/lib/journal/replay';
 import { hasActivity, summarizeExecutions, type TradeSummary } from '@/lib/journal/summary';
 import { fmtUsd, fmtWon } from '@/lib/format';
-import type { Execution, NewExecution } from '@/types/journal';
+import type { Execution, NewExecution, Side, TradeNote } from '@/types/journal';
 import type { Holding } from '@/types/domain';
 
 /** 로컬 시간대 기준 'YYYY-MM-DD'. 체결은 UTC로 저장되므로 표시 시점에 변환한다. */
@@ -53,6 +64,74 @@ function monthKey(year: number, month: number): string {
 }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+type ViewMode = 'calendar' | 'period' | 'holding';
+const VIEW_MODE_LABELS: Record<ViewMode, string> = { calendar: '달력', period: '기간', holding: '종목' };
+
+type PeriodPreset = 'thisMonth' | 'last3Months' | 'thisYear' | 'all' | 'custom';
+const PERIOD_PRESET_LABELS: Record<Exclude<PeriodPreset, 'custom'>, string> = {
+  thisMonth: '이번 달',
+  last3Months: '최근 3개월',
+  thisYear: '올해',
+  all: '전체',
+};
+
+interface DateRange {
+  start: string;
+  end: string;
+}
+
+function thisMonthRange(): DateRange {
+  const t = new Date();
+  const start = new Date(t.getFullYear(), t.getMonth(), 1);
+  const end = new Date(t.getFullYear(), t.getMonth() + 1, 0);
+  return { start: localDayKey(start.toISOString()), end: localDayKey(end.toISOString()) };
+}
+
+/** 프리셋 클릭 시점(이벤트 핸들러 안)에서만 호출한다 — 렌더 중에는 부르지 않는다. */
+function presetRange(preset: Exclude<PeriodPreset, 'custom' | 'all'>): DateRange {
+  const t = new Date();
+  const end = localDayKey(t.toISOString());
+  if (preset === 'thisMonth') return thisMonthRange();
+  if (preset === 'last3Months') {
+    const start = new Date(t.getFullYear(), t.getMonth() - 2, 1);
+    return { start: localDayKey(start.toISOString()), end };
+  }
+  const start = new Date(t.getFullYear(), 0, 1);
+  return { start: localDayKey(start.toISOString()), end };
+}
+
+/** 날짜 있는 체결들의 최초~최근 날짜. 기초잔고(날짜 없음)는 자연히 빠진다. */
+function dateRangeOf(executions: Execution[]): DateRange | null {
+  const days = executions.flatMap((e) => (e.executedAt ? [localDayKey(e.executedAt)] : []));
+  if (days.length === 0) return null;
+  return { start: days.reduce((a, b) => (a < b ? a : b)), end: days.reduce((a, b) => (a > b ? a : b)) };
+}
+
+/** 종목 콤보박스 표기 — ExecutionFormDialog와 같은 규칙(해외는 티커 먼저). */
+function holdingOptionLabel(h: Holding): string {
+  return h.region === '해외' && h.ticker ? `${h.ticker}(${h.name})` : h.name;
+}
+
+interface HoldingComboItem {
+  value: string;
+  label: string;
+}
+
+/** 한 종목의 근거를 매수/매도로 나눠 시간순으로 — 기초잔고(날짜 없음)는 항상 먼저. */
+function notesForSide(
+  executions: Execution[],
+  tradeNotes: TradeNote[],
+  side: Side,
+): { execution: Execution; body: string }[] {
+  return executions
+    .filter((e) => e.side === side)
+    .toSorted((a, b) => (a.executedAt ?? '').localeCompare(b.executedAt ?? ''))
+    .flatMap((e) => {
+      const body = tradeNotes.find((n) => n.executionId === e.id)?.body;
+      return body ? [{ execution: e, body }] : [];
+    });
+}
 
 export default function JournalPage() {
   const groupsQuery = useGroups();
@@ -73,6 +152,10 @@ export default function JournalPage() {
   const [filter, setFilter] = useState<ExecutionsFilter>(ALL_EXECUTIONS_FILTER);
   const [deleteTarget, setDeleteTarget] = useState<Execution | null>(null);
   const [openingBalanceListOpen, setOpeningBalanceListOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('calendar');
+  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('thisMonth');
+  const [periodRange, setPeriodRange] = useState<DateRange>(() => thisMonthRange());
+  const [selectedHoldingId, setSelectedHoldingId] = useState('');
 
   const holdings = useMemo(() => holdingsQuery.data ?? [], [holdingsQuery.data]);
   const holdingById = useMemo(() => new Map(holdings.map((h) => [h.id, h])), [holdings]);
@@ -174,8 +257,85 @@ export default function JournalPage() {
     [dayList, holdingById, closedLotByExecutionId, rateForExecution],
   );
 
-  // 우측 패널에 실제로 노출되는 범위 — 달력에서 고른 기간(일/월) 안에서만 필터가 동작한다.
-  const scopedExecutions = selectedDay ? dayList : monthExecutions;
+  // 기간 모드 — 달력의 월 단위 대신 임의 구간(프리셋 또는 직접 지정)으로 스코핑한다.
+  // 기초잔고는 날짜가 없어 어느 구간에도 속하지 않으므로 자연히 빠진다.
+  const periodExecutions = useMemo(
+    () =>
+      (executionsQuery.data ?? []).filter((e) => {
+        if (!e.executedAt) return false;
+        const day = localDayKey(e.executedAt);
+        return day >= periodRange.start && day <= periodRange.end;
+      }),
+    [executionsQuery.data, periodRange],
+  );
+  const periodHasForeign = useMemo(
+    () => periodExecutions.some((e) => holdingById.get(e.holdingId)?.region === '해외'),
+    [periodExecutions, holdingById],
+  );
+  const periodFxQuery = useHistoricalFxRates(periodRange.start, periodRange.end, periodHasForeign);
+  const periodRateForExecution = useMemo(() => {
+    const rates = periodFxQuery.data?.rates;
+    if (!rates) return undefined;
+    return (e: Execution) => (e.executedAt ? rates[localDayKey(e.executedAt)] : undefined);
+  }, [periodFxQuery.data]);
+  const periodSummary = useMemo(
+    () => summarizeExecutions(periodExecutions, holdingById, closedLotByExecutionId, periodRateForExecution),
+    [periodExecutions, holdingById, closedLotByExecutionId, periodRateForExecution],
+  );
+
+  function applyPeriodPreset(preset: PeriodPreset) {
+    setPeriodPreset(preset);
+    if (preset === 'custom') return; // 사용자가 직접 입력할 때까지 대기
+    if (preset === 'all') {
+      const range = dateRangeOf(executionsQuery.data ?? []);
+      if (range) setPeriodRange(range);
+      return;
+    }
+    setPeriodRange(presetRange(preset));
+  }
+
+  // 종목 모드 — 그 종목의 전체 체결 이력(기초잔고 포함, 날짜 무관)을 한 번에 본다.
+  const holdingExecutions = useMemo(
+    () => (executionsQuery.data ?? []).filter((e) => e.holdingId === selectedHoldingId),
+    [executionsQuery.data, selectedHoldingId],
+  );
+  const holdingFxRange = useMemo(() => dateRangeOf(holdingExecutions), [holdingExecutions]);
+  const holdingHasForeign = holdingById.get(selectedHoldingId)?.region === '해외';
+  const holdingFxQuery = useHistoricalFxRates(
+    holdingFxRange?.start ?? '',
+    holdingFxRange?.end ?? '',
+    !!holdingFxRange && holdingHasForeign,
+  );
+  // 기초잔고는 날짜가 없어 체결일 환율을 구할 수 없으므로, 그 부분만 오늘 실시간
+  // 환율로 환산한다 — 요약 합계에서 기초잔고를 아예 빼는 대신, "환산 기준일이
+  // 다르다"는 걸 감수하고 포함시키는 쪽을 택했다 (사용자 요청).
+  const liveFxQuery = useExchangeRate();
+  const holdingRateForExecution = useMemo(() => {
+    const historicalRates = holdingFxQuery.data?.rates;
+    const liveRate = liveFxQuery.data?.rate;
+    if (!historicalRates && liveRate === undefined) return undefined;
+    return (e: Execution) => (e.executedAt ? historicalRates?.[localDayKey(e.executedAt)] : liveRate);
+  }, [holdingFxQuery.data, liveFxQuery.data]);
+  const holdingSummary = useMemo(
+    () => summarizeExecutions(holdingExecutions, holdingById, closedLotByExecutionId, holdingRateForExecution),
+    [holdingExecutions, holdingById, closedLotByExecutionId, holdingRateForExecution],
+  );
+  const holdingComboItems = useMemo(
+    () => holdings.map((h): HoldingComboItem => ({ value: h.id, label: holdingOptionLabel(h) })),
+    [holdings],
+  );
+  const holdingBuyNotes = useMemo(
+    () => notesForSide(holdingExecutions, tradeNotes, 'BUY'),
+    [holdingExecutions, tradeNotes],
+  );
+  const holdingSellNotes = useMemo(
+    () => notesForSide(holdingExecutions, tradeNotes, 'SELL'),
+    [holdingExecutions, tradeNotes],
+  );
+
+  // 우측 패널에 실제로 노출되는 범위 — 달력/기간 모드에서 고른 구간 안에서만 필터가 동작한다.
+  // 종목 모드는 별도 레이아웃(holdingExecutions)을 쓰므로 여기 관여하지 않는다.
+  const scopedExecutions = viewMode === 'period' ? periodExecutions : selectedDay ? dayList : monthExecutions;
   const filteredExecutions = useMemo(
     () => scopedExecutions.filter((e) => matchesExecutionsFilter(e, filter, holdingById.get(e.holdingId))),
     [scopedExecutions, filter, holdingById],
@@ -325,6 +485,24 @@ export default function JournalPage() {
 
       {isError && <DataErrorNotice error={error} />}
 
+      <div className="mb-4 flex gap-1.5">
+        {(Object.keys(VIEW_MODE_LABELS) as ViewMode[]).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => setViewMode(mode)}
+            className={cn(
+              'rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors',
+              viewMode === mode
+                ? 'border-primary bg-accent text-accent-foreground'
+                : 'border-border text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {VIEW_MODE_LABELS[mode]}
+          </button>
+        ))}
+      </div>
+
       {isLoading ? (
         <div className="space-y-4">
           <Skeleton className="h-64 w-full rounded-lg" />
@@ -332,6 +510,131 @@ export default function JournalPage() {
         </div>
       ) : (groupsQuery.data ?? []).length === 0 ? (
         <p className="text-sm text-muted-foreground">먼저 포트폴리오 설정에서 자산군을 추가해주세요.</p>
+      ) : viewMode === 'holding' ? (
+        <div className="flex flex-col gap-5">
+          <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+            <Combobox<HoldingComboItem>
+              items={holdingComboItems}
+              value={holdingComboItems.find((i) => i.value === selectedHoldingId) ?? null}
+              onValueChange={(item) => setSelectedHoldingId(item?.value ?? '')}
+            >
+              <ComboboxInput placeholder="종목 검색" className="w-full sm:w-80" />
+              <ComboboxContent>
+                <ComboboxEmpty>검색 결과가 없습니다.</ComboboxEmpty>
+                <ComboboxList>
+                  {(item: HoldingComboItem) => (
+                    <ComboboxItem key={item.value} value={item}>
+                      {item.label}
+                    </ComboboxItem>
+                  )}
+                </ComboboxList>
+              </ComboboxContent>
+            </Combobox>
+          </div>
+
+          {!selectedHoldingId ? (
+            <p className="text-sm text-muted-foreground">종목을 선택하면 전체 매매 이력과 근거를 볼 수 있습니다.</p>
+          ) : (
+            <>
+              {hasActivity(holdingSummary) && (
+                <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+                  <TradeSummaryStrip
+                    summary={holdingSummary}
+                    fxLoading={holdingHasForeign && (holdingFxQuery.isLoading || liveFxQuery.isLoading)}
+                  />
+                </div>
+              )}
+
+              <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+                <div className="mb-3 text-[13px] font-semibold">전체 체결 이력</div>
+                <ExecutionsTable
+                  executions={holdingExecutions}
+                  holdingById={holdingById}
+                  closedLotByExecutionId={closedLotByExecutionId}
+                  rateForExecution={holdingRateForExecution}
+                  onEdit={openEditDialog}
+                  onDelete={setDeleteTarget}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <NotesColumn title="매수 근거" notes={holdingBuyNotes} />
+                <NotesColumn title="매도 근거" notes={holdingSellNotes} />
+              </div>
+            </>
+          )}
+        </div>
+      ) : viewMode === 'period' ? (
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+          <div className="rounded-lg border border-border bg-card p-4 sm:p-5 lg:w-90 lg:shrink-0">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-[15px] font-semibold">
+                {periodRange.start} ~ {periodRange.end}
+              </span>
+              <span className="text-xs text-muted-foreground">체결 {periodExecutions.length}건</span>
+            </div>
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              {(Object.keys(PERIOD_PRESET_LABELS) as Exclude<PeriodPreset, 'custom'>[]).map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => applyPeriodPreset(preset)}
+                  className={cn(
+                    'rounded-full border px-2.5 py-1 text-xs transition-colors',
+                    periodPreset === preset
+                      ? 'border-primary bg-accent text-accent-foreground'
+                      : 'border-border text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {PERIOD_PRESET_LABELS[preset]}
+                </button>
+              ))}
+            </div>
+            <div className="mb-3 flex items-center gap-2">
+              <Input
+                type="date"
+                value={periodRange.start}
+                onChange={(e) => {
+                  setPeriodPreset('custom');
+                  setPeriodRange((r) => ({ ...r, start: e.target.value }));
+                }}
+                className="font-mono text-xs"
+              />
+              <span className="text-xs text-muted-foreground">~</span>
+              <Input
+                type="date"
+                value={periodRange.end}
+                onChange={(e) => {
+                  setPeriodPreset('custom');
+                  setPeriodRange((r) => ({ ...r, end: e.target.value }));
+                }}
+                className="font-mono text-xs"
+              />
+            </div>
+            {hasActivity(periodSummary) && (
+              <TradeSummaryStrip summary={periodSummary} fxLoading={periodFxQuery.isLoading} />
+            )}
+          </div>
+
+          <div className="flex min-w-0 flex-1 flex-col rounded-lg border border-border bg-card p-4 sm:p-5 lg:max-h-[calc(100vh-220px)]">
+            <div className="mb-3 shrink-0 text-[13px] font-semibold">선택한 기간의 체결</div>
+            {scopedExecutions.length > 0 && (
+              <div className="mb-3 shrink-0">
+                <ExecutionsFilterBar filter={filter} onChange={setFilter} holdingOptions={scopedHoldingOptions} />
+              </div>
+            )}
+            <div className="scrollbar-hidden min-h-0 overflow-y-auto">
+              <ExecutionsTable
+                executions={filteredExecutions}
+                holdingById={holdingById}
+                closedLotByExecutionId={closedLotByExecutionId}
+                rateForExecution={periodRateForExecution}
+                onEdit={openEditDialog}
+                onDelete={setDeleteTarget}
+              />
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
           <div className="rounded-lg border border-border bg-card p-4 sm:p-5 lg:w-90 lg:shrink-0">
@@ -577,6 +880,30 @@ function AmountCell({
         <span className="block text-[10px] font-normal text-muted-foreground">
           {krw === 0 ? '환율 미확인' : `(${sign(usd)}${fmtUsd(usd)})`}
         </span>
+      )}
+    </div>
+  );
+}
+
+/** 종목 모드의 "매수 근거"/"매도 근거" 칸 — 매수/매도를 나란히 분리해서 보여달라는
+ * 요청대로 두 칸을 각각 이 컴포넌트로 렌더링한다. */
+function NotesColumn({ title, notes }: { title: string; notes: { execution: Execution; body: string }[] }) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
+      <div className="mb-3 text-[13px] font-semibold">{title}</div>
+      {notes.length === 0 ? (
+        <p className="text-xs text-muted-foreground">기록된 근거가 없습니다.</p>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {notes.map(({ execution: e, body }) => (
+            <div key={e.id} className="border-t border-border pt-2.5 text-xs first:border-t-0 first:pt-0">
+              <div className="mb-1 text-[10px] text-muted-foreground">
+                {e.executedAt ? localDayKey(e.executedAt) : '기초잔고'}
+              </div>
+              <p className="whitespace-pre-wrap">{body}</p>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

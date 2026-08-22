@@ -56,6 +56,7 @@
 | [0048](./0048-opening-balance-no-date.md) | 기초잔고는 날짜 없이 기록, 매매일지 캘린더에서 제외 | Partially superseded by ADR-0050 |
 | [0049](./0049-execution-row-inline-actions.md) | 체결 목록 인라인 수정/삭제 버튼 복원, 수정 시 매매 구분 고정 | Accepted |
 | [0050](./0050-opening-balance-new-holding-only.md) | 기초잔고는 "+ 새 종목" 전용, 새 종목은 매수 고정, 새 종목 흐름에 자산종류 추가 | Accepted |
+| [0051](./0051-journal-view-modes.md) | 매매일지 보기 모드 — 달력/기간/종목, 종목 보기는 매수·매도 근거 분리 표시 | Accepted |
 
 ## 새 ADR 작성 형식
 
