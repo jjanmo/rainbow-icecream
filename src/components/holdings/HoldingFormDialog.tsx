@@ -3,8 +3,16 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { NewHolding, Region } from '@/types/domain';
+import { ASSET_TYPE_LABELS, type AssetType, type NewHolding, type Region } from '@/types/domain';
 
 type Draft = Omit<NewHolding, 'groupId' | 'qty' | 'avgPrice'>;
 
@@ -14,7 +22,7 @@ const EMPTY_DRAFT: Draft = {
   targetPctInGroup: 0,
   account: '일반계좌',
   region: '국내',
-  memo: '',
+  assetType: 'ETF',
   sortOrder: 0,
 };
 
@@ -26,6 +34,11 @@ const REGION_ITEMS = [
 const ACCOUNT_TYPES = ['일반계좌', 'ISA', '연금저축', 'IRP', 'CMA', '파킹통장', '예적금', '기타'];
 const ACCOUNT_ITEMS = ACCOUNT_TYPES.map((v) => ({ label: v, value: v }));
 
+const ASSET_TYPE_ITEMS = (Object.keys(ASSET_TYPE_LABELS) as AssetType[]).map((t) => ({
+  label: ASSET_TYPE_LABELS[t],
+  value: t,
+}));
+
 function toDraft(holding: NewHolding): Draft {
   return {
     ticker: holding.ticker ?? '',
@@ -33,9 +46,37 @@ function toDraft(holding: NewHolding): Draft {
     targetPctInGroup: holding.targetPctInGroup,
     account: holding.account ?? '',
     region: holding.region,
-    memo: holding.memo ?? '',
+    assetType: holding.assetType,
     sortOrder: holding.sortOrder,
   };
+}
+
+function AssetTypeHelp() {
+  return (
+    <Popover>
+      <PopoverTrigger
+        aria-label="자산종류와 자산군의 차이 보기"
+        className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border text-[10px] leading-none font-normal text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
+      >
+        ?
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 text-left">
+        <PopoverHeader>
+          <PopoverTitle className="text-[13px]">자산종류 vs 자산군</PopoverTitle>
+          <PopoverDescription className="flex flex-col gap-1.5 text-xs leading-relaxed">
+            <span>
+              <span className="font-semibold text-foreground">자산종류</span> — 이 종목이 어떤 금융상품인지의 고정된
+              분류입니다(개별 주식·ETF·ETN·리츠·일반 펀드·채권·예수금). 정해진 값 중에서 고릅니다.
+            </span>
+            <span>
+              <span className="font-semibold text-foreground">자산군</span> — 내가 세운 투자 전략에 따라 직접
+              이름 붙인 그룹입니다(예: &ldquo;성장주&rdquo;, &ldquo;배당주&rdquo;). 목표 비중을 정하는 단위예요.
+            </span>
+          </PopoverDescription>
+        </PopoverHeader>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export function HoldingFormDialog({
@@ -98,22 +139,48 @@ export function HoldingFormDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label>
-              자산군 <span className="text-destructive">*</span>
-            </Label>
-            <Select items={groupItems} value={groupId} onValueChange={(v) => setGroupId(v ?? '')}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="자산군 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                {groupOptions.map((g) => (
-                  <SelectItem key={g.id} value={g.id}>
-                    {g.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex gap-2.5">
+            <div className="flex flex-1 flex-col gap-1.5">
+              <Label>
+                자산군 <span className="text-destructive">*</span>
+              </Label>
+              <Select items={groupItems} value={groupId} onValueChange={(v) => setGroupId(v ?? '')}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="자산군 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {groupOptions.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-1 flex-col gap-1.5">
+              <div className="flex items-center gap-1">
+                <Label>
+                  자산종류 <span className="text-destructive">*</span>
+                </Label>
+                <AssetTypeHelp />
+              </div>
+              <Select
+                items={ASSET_TYPE_ITEMS}
+                value={draft.assetType}
+                onValueChange={(v) => v && setDraft((d) => ({ ...d, assetType: v as AssetType }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ASSET_TYPE_ITEMS.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="flex gap-2.5">
@@ -189,11 +256,6 @@ export function HoldingFormDialog({
               여기서는 종목 정보만 등록됩니다 — 보유수량·평균매입가는 매매일지에서 첫 체결을 기록해야 채워집니다.
             </p>
           )}
-
-          <div className="flex flex-col gap-1.5">
-            <Label>비고</Label>
-            <Input value={draft.memo ?? ''} onChange={(e) => setDraft((d) => ({ ...d, memo: e.target.value }))} />
-          </div>
         </div>
 
         <DialogFooter>

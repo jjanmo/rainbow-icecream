@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Holding, NewHolding, Region } from "@/types/domain";
+import type { AssetType, Holding, NewHolding, Region } from "@/types/domain";
 
 interface HoldingRow {
   id: string;
@@ -12,14 +12,14 @@ interface HoldingRow {
   avg_price: number;
   account: string | null;
   region: Region;
-  memo: string | null;
+  asset_type: AssetType;
   sort_order: number;
   deleted_at: string | null;
   created_at: string;
 }
 
 const COLUMNS =
-  "id, user_id, group_id, ticker, name, target_pct_in_group, qty, avg_price, account, region, memo, sort_order, deleted_at, created_at";
+  "id, user_id, group_id, ticker, name, target_pct_in_group, qty, avg_price, account, region, asset_type, sort_order, deleted_at, created_at";
 
 function toDomain(row: HoldingRow): Holding {
   return {
@@ -33,7 +33,7 @@ function toDomain(row: HoldingRow): Holding {
     avgPrice: Number(row.avg_price),
     account: row.account,
     region: row.region,
-    memo: row.memo,
+    assetType: row.asset_type,
     sortOrder: row.sort_order,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
@@ -69,7 +69,7 @@ export async function insertHolding(
       avg_price: holding.avgPrice,
       account: holding.account,
       region: holding.region,
-      memo: holding.memo,
+      asset_type: holding.assetType,
       sort_order: holding.sortOrder,
     })
     .select(COLUMNS)
@@ -92,7 +92,7 @@ export async function updateHolding(
   if (patch.avgPrice !== undefined) update.avg_price = patch.avgPrice;
   if (patch.account !== undefined) update.account = patch.account;
   if (patch.region !== undefined) update.region = patch.region;
-  if (patch.memo !== undefined) update.memo = patch.memo;
+  if (patch.assetType !== undefined) update.asset_type = patch.assetType;
   if (patch.sortOrder !== undefined) update.sort_order = patch.sortOrder;
 
   const { error } = await supabase.from("holdings").update(update).eq("id", id);

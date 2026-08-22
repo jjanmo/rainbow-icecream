@@ -303,7 +303,9 @@ export function ExecutionFormDialog({
           avgPrice: 0,
           account: newHolding.account,
           region: newHolding.region,
-          memo: null,
+          // 자산종류는 필수값이지만 여기서는 안 받는다 — 기본값 ETF로 만들고
+          // 보유종목 화면에서 나중에 고칠 수 있다 (ADR-0047).
+          assetType: 'ETF',
           sortOrder: 0,
         },
         execution,

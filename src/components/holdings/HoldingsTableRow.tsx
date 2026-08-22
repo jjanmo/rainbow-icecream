@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { returnColor, type HoldingCalc } from "@/lib/calc/rebalance";
 import { fmtQty, fmtSigned, fmtUsd, fmtWon } from "@/lib/format";
+import { ASSET_TYPE_LABELS } from "@/types/domain";
 import { FitText } from "./FitText";
 
 export function HoldingsTableRow({
@@ -33,6 +34,9 @@ export function HoldingsTableRow({
         </div>
       </TableCell>
       <TableCell>
+        <FitText className="text-muted-foreground">{ASSET_TYPE_LABELS[holding.assetType]}</FitText>
+      </TableCell>
+      <TableCell>
         <FitText>{holding.account || "-"}</FitText>
         <FitText className="text-muted-foreground">{holding.region}</FitText>
       </TableCell>
@@ -60,9 +64,6 @@ export function HoldingsTableRow({
         <FitText className="font-mono font-semibold" style={{ color: returnColor(holding.returnPct) }}>
           {fmtSigned(holding.returnPct)}
         </FitText>
-      </TableCell>
-      <TableCell>
-        <FitText className="text-muted-foreground">{holding.memo || "-"}</FitText>
       </TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-0.5">

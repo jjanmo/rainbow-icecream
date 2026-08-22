@@ -51,6 +51,8 @@
 | [0043](./0043-drop-note-target-type.md) | trade_notes의 target_type/target_key를 없애고 execution_id FK로 교체 | Accepted |
 | [0044](./0044-holdings-balance-write-only-via-journal.md) | holdings.qty/avg_price는 매매일지를 통해서만 변경 (보유종목 화면은 읽기 전용) | Accepted |
 | [0045](./0045-holdings-soft-delete.md) | 종목 삭제를 소프트 삭제로, 삭제 전 확인창 추가 | Accepted (view/restore UI removed, see note) |
+| [0046](./0046-asset-type-remove-memo.md) | 자산타입 필드 추가, 비고(메모) 필드 제거 | Partially superseded by ADR-0047 |
+| [0047](./0047-asset-type-required-labels.md) | 자산종류를 필수값으로, 표기·라벨 다듬기 (개별 주식 등) | Accepted |
 
 ## 새 ADR 작성 형식
 

@@ -3,10 +3,10 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { returnColor, type HoldingCalc } from '@/lib/calc/rebalance';
 import { fmtSigned, fmtWon } from '@/lib/format';
-import type { Holding } from '@/types/domain';
+import { ASSET_TYPE_LABELS, type Holding } from '@/types/domain';
 import { HoldingsTableRow } from './HoldingsTableRow';
 
-type SortableKey = 'name' | 'qty' | 'avgPrice' | 'price' | 'value' | 'return';
+type SortableKey = 'name' | 'group' | 'account' | 'qty' | 'avgPrice' | 'price' | 'value' | 'return' | 'assetType';
 
 interface ColumnDef {
   key: string;
@@ -18,14 +18,14 @@ interface ColumnDef {
 
 export const COLUMNS: ColumnDef[] = [
   { key: 'name', label: '종목', width: 170, align: 'left', sortKey: 'name' },
-  { key: 'group', label: '자산군', width: 120, align: 'left' },
-  { key: 'accountRegion', label: '계좌·구분', width: 90, align: 'left' },
+  { key: 'group', label: '자산군', width: 120, align: 'left', sortKey: 'group' },
+  { key: 'assetType', label: '자산종류', width: 90, align: 'left', sortKey: 'assetType' },
+  { key: 'accountRegion', label: '계좌·지역', width: 90, align: 'left', sortKey: 'account' },
   { key: 'qty', label: '수량', width: 70, align: 'right', sortKey: 'qty' },
   { key: 'avgPrice', label: '평균매입가', width: 90, align: 'right', sortKey: 'avgPrice' },
   { key: 'price', label: '현재가', width: 100, align: 'right', sortKey: 'price' },
   { key: 'value', label: '평가금액', width: 100, align: 'right', sortKey: 'value' },
   { key: 'return', label: '수익률', width: 70, align: 'right', sortKey: 'return' },
-  { key: 'memo', label: '비고', width: 160, align: 'left' },
   { key: 'actions', label: '', width: 70, align: 'right' },
 ];
 
@@ -50,6 +50,10 @@ function compareHoldings(a: HoldingCalc, b: HoldingCalc, sort: SortState | null)
   switch (sort.key) {
     case 'name':
       return a.name.localeCompare(b.name, 'ko') * dir;
+    case 'group':
+      return a.groupName.localeCompare(b.groupName, 'ko') * dir;
+    case 'account':
+      return (a.account ?? '').localeCompare(b.account ?? '', 'ko') * dir;
     case 'qty':
       return (a.qty - b.qty) * dir;
     case 'avgPrice':
@@ -60,6 +64,13 @@ function compareHoldings(a: HoldingCalc, b: HoldingCalc, sort: SortState | null)
       return (a.value - b.value) * dir;
     case 'return':
       return (a.returnPct - b.returnPct) * dir;
+    case 'assetType':
+      return (
+        (a.assetType ? ASSET_TYPE_LABELS[a.assetType] : '').localeCompare(
+          b.assetType ? ASSET_TYPE_LABELS[b.assetType] : '',
+          'ko',
+        ) * dir
+      );
   }
 }
 

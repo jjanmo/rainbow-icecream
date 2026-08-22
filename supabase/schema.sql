@@ -32,7 +32,9 @@ create table if not exists holdings (
   avg_price numeric not null default 0 check (avg_price >= 0),
   account text,
   region text not null default '국내' check (region in ('국내', '해외')),
-  memo text,
+  /** 상품 자체의 고정된 분류 — 사용자가 설정하는 자산군(전략별 그룹)과는 별개다.
+   * 필수값, 기본값 ETF (ADR-0047). */
+  asset_type text not null default 'ETF' check (asset_type in ('STOCK', 'ETF', 'ETN', 'REIT', 'FUND', 'BOND', 'CASH')),
   sort_order int not null default 0,
   /** soft delete — hard delete would cascade through executions/trade_notes and
    * permanently lose that history, even though re-buying the same holding later
@@ -311,3 +313,18 @@ end $$;
 -- ---------------------------------------------------------------------------
 alter table holdings add column if not exists deleted_at timestamptz;
 create index if not exists holdings_user_active_idx on holdings (user_id) where deleted_at is null;
+
+-- ---------------------------------------------------------------------------
+-- Migration: 자산타입 추가, 비고(memo) 제거 (ADR-0046). 기존 memo 값은 버린다. Idempotent.
+-- ---------------------------------------------------------------------------
+alter table holdings add column if not exists asset_type text
+  check (asset_type is null or asset_type in ('STOCK', 'ETF', 'ETN', 'REIT', 'FUND', 'BOND', 'CASH'));
+alter table holdings drop column if exists memo;
+
+-- ---------------------------------------------------------------------------
+-- Migration: 자산종류를 필수값으로, 기본값 ETF (ADR-0047). 기존에 비어있던 값은
+-- ETF로 채운다. Idempotent.
+-- ---------------------------------------------------------------------------
+update holdings set asset_type = 'ETF' where asset_type is null;
+alter table holdings alter column asset_type set not null;
+alter table holdings alter column asset_type set default 'ETF';

@@ -1,4 +1,4 @@
-import type { AssetGroup, Holding, NewAssetGroup, NewHolding, Region } from "@/types/domain";
+import type { AssetGroup, AssetType, Holding, NewAssetGroup, NewHolding, Region } from "@/types/domain";
 
 /**
  * Local, unsaved copy of a group/holding for /setup's edit mode. Editing
@@ -29,7 +29,7 @@ export interface DraftHolding {
   avgPrice: number;
   account: string | null;
   region: Region;
-  memo: string | null;
+  assetType: AssetType;
   sortOrder: number;
 }
 
@@ -49,35 +49,13 @@ export function toDraftHolding(h: Holding): DraftHolding {
     avgPrice: h.avgPrice,
     account: h.account,
     region: h.region,
-    memo: h.memo,
+    assetType: h.assetType,
     sortOrder: h.sortOrder,
   };
 }
 
 export function newDraftGroup(sortOrder: number): DraftGroup {
   return { clientKey: crypto.randomUUID(), id: null, name: "새 자산군", targetPct: 0, sortOrder };
-}
-
-/**
- * Builds a DraftHolding from a HoldingFormDialog submission — `holding.groupId`
- * is actually the target DraftGroup's clientKey (see the setup page's use of
- * HoldingFormDialog, which is fed draft groups' clientKeys as its group options).
- */
-export function draftHoldingFromForm(holding: NewHolding): DraftHolding {
-  return {
-    clientKey: crypto.randomUUID(),
-    id: null,
-    groupClientKey: holding.groupId,
-    ticker: holding.ticker,
-    name: holding.name,
-    targetPctInGroup: holding.targetPctInGroup,
-    qty: holding.qty,
-    avgPrice: holding.avgPrice,
-    account: holding.account,
-    region: holding.region,
-    memo: holding.memo,
-    sortOrder: holding.sortOrder,
-  };
 }
 
 /**
@@ -215,7 +193,7 @@ export async function commitSetupDraft({
       avgPrice: h.avgPrice,
       account: h.account,
       region: h.region,
-      memo: h.memo,
+      assetType: h.assetType,
       sortOrder: h.sortOrder,
     });
   }
@@ -236,7 +214,7 @@ export async function commitSetupDraft({
     if (original.avgPrice !== h.avgPrice) patch.avgPrice = h.avgPrice;
     if (original.account !== h.account) patch.account = h.account;
     if (original.region !== h.region) patch.region = h.region;
-    if (original.memo !== h.memo) patch.memo = h.memo;
+    if (original.assetType !== h.assetType) patch.assetType = h.assetType;
     if (original.sortOrder !== h.sortOrder) patch.sortOrder = h.sortOrder;
     if (Object.keys(patch).length > 0) {
       await mutations.updateHolding({ id: h.id, patch });
