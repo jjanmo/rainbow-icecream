@@ -32,6 +32,9 @@ export interface Holding {
   memo: string | null;
   /** Manual display order within its group (lower = earlier), set via drag-and-drop on /setup. */
   sortOrder: number;
+  /** soft delete — 하드 삭제는 executions/trade_notes까지 cascade로 영구히 지워서,
+   * 나중에 같은 종목을 재매수했을 때 예전 기록을 다시 볼 방법이 없어진다 (ADR-0045). */
+  deletedAt: string | null;
   createdAt: string;
 }
 
@@ -45,4 +48,4 @@ export interface LivePrice {
 export type LivePriceMap = Record<string, LivePrice>;
 
 export type NewAssetGroup = Omit<AssetGroup, "id" | "userId" | "createdAt">;
-export type NewHolding = Omit<Holding, "id" | "userId" | "createdAt">;
+export type NewHolding = Omit<Holding, "id" | "userId" | "createdAt" | "deletedAt">;

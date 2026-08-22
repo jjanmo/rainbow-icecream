@@ -14,11 +14,12 @@ interface HoldingRow {
   region: Region;
   memo: string | null;
   sort_order: number;
+  deleted_at: string | null;
   created_at: string;
 }
 
 const COLUMNS =
-  "id, user_id, group_id, ticker, name, target_pct_in_group, qty, avg_price, account, region, memo, sort_order, created_at";
+  "id, user_id, group_id, ticker, name, target_pct_in_group, qty, avg_price, account, region, memo, sort_order, deleted_at, created_at";
 
 function toDomain(row: HoldingRow): Holding {
   return {
@@ -34,14 +35,19 @@ function toDomain(row: HoldingRow): Holding {
     region: row.region,
     memo: row.memo,
     sortOrder: row.sort_order,
+    deletedAt: row.deleted_at,
     createdAt: row.created_at,
   };
 }
 
+/** 삭제된(deleted_at 있는) 종목은 기본적으로 제외한다 — 매매일지·비중 체크·설정
+ * 화면 전부 이 함수 하나로 종목을 읽으므로, 여기서 걸러두면 나머지는 신경 쓸
+ * 필요가 없다 (executions의 deleted_at 필터와 같은 패턴, ADR-0032/0045). */
 export async function fetchHoldings(supabase: SupabaseClient): Promise<Holding[]> {
   const { data, error } = await supabase
     .from("holdings")
     .select(COLUMNS)
+    .is("deleted_at", null)
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -93,7 +99,11 @@ export async function updateHolding(
   if (error) throw error;
 }
 
+/** 소프트 삭제 — executions/trade_notes는 그대로 둔다. 같은 종목을 나중에 다시
+ * 매수하면 예전 매매 기록·메모를 이어서 볼 수 있어야 하기 때문이다 (ADR-0045).
+ * 하드 삭제(구 동작)는 holdings.holding_id의 on delete cascade 때문에 그 기록을
+ * 영구히 지워버렸다. */
 export async function deleteHolding(supabase: SupabaseClient, id: string): Promise<void> {
-  const { error } = await supabase.from("holdings").delete().eq("id", id);
+  const { error } = await supabase.from("holdings").update({ deleted_at: new Date().toISOString() }).eq("id", id);
   if (error) throw error;
 }

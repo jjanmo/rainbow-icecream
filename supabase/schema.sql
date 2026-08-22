@@ -34,6 +34,10 @@ create table if not exists holdings (
   region text not null default '국내' check (region in ('국내', '해외')),
   memo text,
   sort_order int not null default 0,
+  /** soft delete — hard delete would cascade through executions/trade_notes and
+   * permanently lose that history, even though re-buying the same holding later
+   * should surface it again (ADR-0045). */
+  deleted_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -43,6 +47,7 @@ create table if not exists holdings (
 
 create index if not exists holdings_user_group_idx on holdings (user_id, group_id);
 create index if not exists asset_groups_user_idx on asset_groups (user_id);
+create index if not exists holdings_user_active_idx on holdings (user_id) where deleted_at is null;
 
 -- updated_at auto-touch
 create or replace function set_updated_at()
@@ -300,3 +305,9 @@ begin
     alter table trade_notes drop column if exists target_type;
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Migration: 종목 삭제를 소프트 삭제로 (ADR-0045). Idempotent.
+-- ---------------------------------------------------------------------------
+alter table holdings add column if not exists deleted_at timestamptz;
+create index if not exists holdings_user_active_idx on holdings (user_id) where deleted_at is null;

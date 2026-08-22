@@ -29,6 +29,7 @@ export function useUpdateHolding() {
   });
 }
 
+/** 소프트 삭제 — executions/trade_notes는 그대로 남는다 (ADR-0045). */
 export function useDeleteHolding() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -50,6 +50,7 @@
 | [0042](./0042-remove-trade-note-tags.md) | 근거 태그 제거, 자유 서술만 남김 | Accepted |
 | [0043](./0043-drop-note-target-type.md) | trade_notes의 target_type/target_key를 없애고 execution_id FK로 교체 | Accepted |
 | [0044](./0044-holdings-balance-write-only-via-journal.md) | holdings.qty/avg_price는 매매일지를 통해서만 변경 (보유종목 화면은 읽기 전용) | Accepted |
+| [0045](./0045-holdings-soft-delete.md) | 종목 삭제를 소프트 삭제로, 삭제 전 확인창 추가 | Accepted (view/restore UI removed, see note) |
 
 ## 새 ADR 작성 형식
 

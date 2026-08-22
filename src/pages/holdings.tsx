@@ -1,4 +1,14 @@
 import { useMemo, useState } from 'react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { HoldingFormDialog } from '@/components/holdings/HoldingFormDialog';
 import { HoldingsTable } from '@/components/holdings/HoldingsTable';
 import { ALL_HOLDINGS_FILTER, HoldingsFilterBar, type HoldingsFilter } from '@/components/holdings/HoldingsFilterBar';
@@ -18,6 +28,7 @@ export default function HoldingsPage() {
   const [filter, setFilter] = useState<HoldingsFilter>(ALL_HOLDINGS_FILTER);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Holding | null>(null);
 
   const filteredHoldings = useMemo(() => {
     if (!data) return [];
@@ -44,6 +55,12 @@ export default function HoldingsPage() {
   function openEditModal(holding: Holding) {
     setEditingHolding(holding);
     setModalOpen(true);
+  }
+
+  function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    deleteHolding.mutate(deleteTarget.id);
+    setDeleteTarget(null);
   }
 
   return (
@@ -79,7 +96,10 @@ export default function HoldingsPage() {
             rows={filteredHoldings}
             usdKrwRate={usdKrwRate}
             onEdit={openEditModal}
-            onDelete={(id) => deleteHolding.mutate(id)}
+            onDelete={(id) => {
+              const h = data.holdings.find((holding) => holding.id === id);
+              if (h) setDeleteTarget(h);
+            }}
           />
         </>
       )}
@@ -99,6 +119,19 @@ export default function HoldingsPage() {
           }
         }}
       />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{deleteTarget?.name} 삭제</AlertDialogTitle>
+            <AlertDialogDescription>목록에서 사라지지만, 이 종목의 매매 기록·메모는 삭제되지 않습니다.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete}>삭제</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
