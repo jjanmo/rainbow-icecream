@@ -43,7 +43,7 @@ import { useGroups } from '@/hooks/useGroups';
 import { useAddHolding, useHoldings } from '@/hooks/useHoldings';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { useHistoricalFxRates } from '@/hooks/useHistoricalFxRates';
-import { useTradeNotes, useUpsertTradeNote } from '@/hooks/useTradeNotes';
+import { useDeleteTradeNote, useTradeNotes, useUpsertTradeNote } from '@/hooks/useTradeNotes';
 import { returnColor } from '@/lib/calc/rebalance';
 import { OversoldError } from '@/lib/journal/commit';
 import { replayHolding, type ClosedLot } from '@/lib/journal/replay';
@@ -143,6 +143,7 @@ export default function JournalPage() {
   const deleteExecution = useDeleteExecution();
   const addHolding = useAddHolding();
   const upsertTradeNote = useUpsertTradeNote();
+  const deleteTradeNote = useDeleteTradeNote();
 
   const now = new Date();
   const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() });
@@ -420,7 +421,7 @@ export default function JournalPage() {
   }: {
     id: string;
     patch: Omit<NewExecution, 'holdingId'>;
-    note?: ExecutionNoteDraft;
+    note: ExecutionNoteDraft | null;
   }) {
     const target = executionsQuery.data?.find((e) => e.id === id);
     const holding = target ? holdingById.get(target.holdingId) : undefined;
@@ -438,13 +439,17 @@ export default function JournalPage() {
       return;
     }
 
-    if (note) {
-      try {
+    // note가 null이면 근거를 비워서 저장한 것 — 기존 근거 행을 지운다. undefined는
+    // 없다: 수정 모드는 항상 textarea 내용대로 upsert/delete 둘 중 하나를 명시한다.
+    try {
+      if (note) {
         await upsertTradeNote.mutateAsync({ ...note, executionId: id });
-      } catch (err) {
-        console.error('Failed to save trade note', err);
-        toast.error('체결은 수정됐지만 근거 저장에 실패했습니다.');
+      } else {
+        await deleteTradeNote.mutateAsync(id);
       }
+    } catch (err) {
+      console.error('Failed to save trade note', err);
+      toast.error('체결은 수정됐지만 근거 저장에 실패했습니다.');
     }
   }
 

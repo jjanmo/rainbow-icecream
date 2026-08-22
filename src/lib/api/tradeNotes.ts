@@ -52,3 +52,12 @@ export async function upsertTradeNote(
   if (error) throw error;
   return toDomain(data as TradeNoteRow);
 }
+
+/** 근거를 비워서 저장한 경우 행 자체를 지운다 — 없는 행을 지워도 에러 나지 않는다. */
+export async function deleteTradeNote(
+  supabase: SupabaseClient,
+  executionId: string,
+): Promise<void> {
+  const { error } = await supabase.from("trade_notes").delete().eq("execution_id", executionId);
+  if (error) throw error;
+}

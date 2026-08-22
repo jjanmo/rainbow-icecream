@@ -133,7 +133,10 @@ export function ExecutionFormDialog({
    * 수 없다(다른 종목으로 옮기는 건 별도 리플레이 대상이 둘이 되는 문제라 지원하지
    * 않는다). 근거는 이 체결에 달린 것을 그대로 불러와 수정할 수 있다. */
   editingExecution?: Execution | null;
-  onUpdate?: (input: { id: string; patch: Omit<NewExecution, 'holdingId'>; note?: ExecutionNoteDraft }) => void;
+  /** note가 null이면 근거를 비워서 저장한 것 — 기존 근거 행을 지워야 한다.
+   * undefined와 구분하는 이유: 수정 모드에선 항상 셋 중 하나를 명확히 알 수 있다
+   * (내용 있음/비움/애초에 없었음이지만 비움과 동일하게 처리해도 무해하다). */
+  onUpdate?: (input: { id: string; patch: Omit<NewExecution, 'holdingId'>; note: ExecutionNoteDraft | null }) => void;
 }) {
   const [side, setSide] = useState<Side>('BUY');
   const [holdingId, setHoldingId] = useState('');
@@ -304,12 +307,15 @@ export function ExecutionFormDialog({
       qty,
       price,
     };
-    const note = buildNoteDraft();
     if (editingExecution) {
-      onUpdate?.({ id: editingExecution.id, patch: execution, note });
+      // 수정 모드는 add 모드의 buildNoteDraft(빈 값=undefined="아무것도 안 함")와
+      // 달리, 비운 것과 아무것도 안 한 것을 구분할 필요가 없다 — 항상 지금 textarea
+      // 내용대로 맞춘다(있으면 upsert, 비었으면 기존 근거 삭제).
+      onUpdate?.({ id: editingExecution.id, patch: execution, note: buildNoteDraft() ?? null });
       onOpenChange(false);
       return;
     }
+    const note = buildNoteDraft();
     if (isNewHolding) {
       onSubmit({
         newHolding: {
