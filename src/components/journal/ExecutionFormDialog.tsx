@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { computeExecutionAmount, currencyOf, normalizeQty } from '@/lib/journal/cost';
 import { fmtQty, fmtUsd, fmtWon } from '@/lib/format';
-import type { Holding, NewHolding, Region } from '@/types/domain';
+import { ASSET_TYPE_LABELS, type AssetType, type Holding, type NewHolding, type Region } from '@/types/domain';
 import type { Execution, NewExecution, NewTradeNote, Side, TradeNote } from '@/types/journal';
 
 /** ExecutionFormDialog가 만드는 근거 초안. executionId는 아직 모른다(신규 체결의
@@ -34,8 +34,9 @@ function toLocalInputValue(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** 로컬 시간대 'YYYY-MM-DD'. */
-function formatLocalDate(iso: string): string {
+/** 로컬 시간대 'YYYY-MM-DD'. 기초잔고(날짜 없음, ADR-0048)는 그 사실 그대로 표시한다. */
+function formatLocalDate(iso: string | null): string {
+  if (!iso) return '기초잔고';
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -58,6 +59,7 @@ interface NewHoldingDraft {
   name: string;
   region: Region;
   account: string;
+  assetType: AssetType;
 }
 
 const EMPTY_NEW_HOLDING: Omit<NewHoldingDraft, 'groupId'> = {
@@ -65,7 +67,13 @@ const EMPTY_NEW_HOLDING: Omit<NewHoldingDraft, 'groupId'> = {
   name: '',
   region: '국내',
   account: '일반계좌',
+  assetType: 'ETF',
 };
+
+const ASSET_TYPE_ITEMS = (Object.keys(ASSET_TYPE_LABELS) as AssetType[]).map((t) => ({
+  label: ASSET_TYPE_LABELS[t],
+  value: t,
+}));
 
 export interface ExecutionSubmit {
   /** 기존 종목에 붙이는 체결. */
@@ -82,10 +90,14 @@ export interface ExecutionSubmit {
  * 선택 입력이라, 채우지 않아도 저장할 수 있다. 입력 마찰이 커지면 기록 자체를
  * 안 하게 된다.
  *
- * 매매 의도(신규진입/추가매수/...) 세부 구분은 받지 않는다 (ADR-0041). 다만 "이미
- * 보유하고 있던 종목 등록"인지는 구분한다 — 이게 OPENING_BALANCE의 유일한 존재
- * 이유다: 실제 매매가 아닌 이월 잔고를 실제 매매처럼 기록하면 보유일수·매매
- * 횟수 같은 집계가 왜곡된다 (ADR-0044).
+ * 매매 의도(신규진입/추가매수/...) 세부 구분은 받지 않는다 (ADR-0041). 다만
+ * "기초잔고"인지는 "+ 새 종목" 흐름에서만 체크박스로 구분한다 — 이게
+ * OPENING_BALANCE의 유일한 존재 이유다: 실제 매매가 아닌 이월 잔고를 실제
+ * 매매처럼 기록하면 보유일수·매매 횟수 같은 집계가 왜곡된다 (ADR-0044). 기초
+ * 잔고는 "매매일"이라는 게 없는 개념이라 체결일시를 받지 않는다 (ADR-0048).
+ * 기존 종목을 고르는 흐름에는 필요 없다 — 새 종목의 시작점을 등록할 때만
+ * 의미가 있다 (ADR-0050). 새 종목은 아직 하나도 없는 걸 팔 수 없으므로 매매
+ * 구분이 항상 매수로 고정된다.
  *
  * 수수료·증권거래세는 계산하지 않는다 — 증권사·이벤트 할인율마다 달라 정밀
  * 계산의 실익이 낮다고 판단해 뺐다 (ADR-0034).
@@ -138,11 +150,12 @@ export function ExecutionFormDialog({
 
   const holdingById = useMemo(() => new Map(holdings.map((h) => [h.id, h])), [holdings]);
 
-  /** 그 종목의 매수 체결에 달린 근거 중 내용이 있는 것만, 시간순으로. */
+  /** 그 종목의 매수 체결에 달린 근거 중 내용이 있는 것만, 시간순으로. 기초잔고는
+   * 날짜가 없지만(ADR-0048) 개념상 항상 가장 이른 매수이므로 맨 앞에 온다. */
   function buyNotesFor(id: string): { execution: Execution; body: string }[] {
     return executions
       .filter((e) => e.holdingId === id && e.side === 'BUY')
-      .sort((a, b) => a.executedAt.localeCompare(b.executedAt))
+      .sort((a, b) => (a.executedAt ?? '').localeCompare(b.executedAt ?? ''))
       .flatMap((e) => {
         const body = tradeNotes.find((n) => n.executionId === e.id)?.body;
         return body ? [{ execution: e, body }] : [];
@@ -160,10 +173,10 @@ export function ExecutionFormDialog({
       setAccountFilter(holding?.account ?? ALL_ACCOUNTS);
       setIsNewHolding(false);
       setIsCash(false);
-      setIsOpeningBalance(false);
+      setIsOpeningBalance(editingExecution.intent === 'OPENING_BALANCE');
       setQtyText(String(editingExecution.qty));
       setPriceText(String(editingExecution.price));
-      setExecutedAtLocal(toLocalInputValue(editingExecution.executedAt));
+      setExecutedAtLocal(editingExecution.executedAt ? toLocalInputValue(editingExecution.executedAt) : '');
       setNoteBody(existingNote?.body ?? '');
     } else if (open) {
       setSide('BUY');
@@ -186,7 +199,8 @@ export function ExecutionFormDialog({
 
   const qty = isNewHolding && isCash ? 1 : normalizeQty(parseFloat(qtyText) || 0);
   const price = parseFloat(priceText) || 0;
-  const executedAt = executedAtLocal ? new Date(executedAtLocal).toISOString() : '';
+  // 기초잔고는 날짜를 받지 않는다 — executed_at은 항상 null이다 (ADR-0048).
+  const executedAt = isOpeningBalance ? null : executedAtLocal ? new Date(executedAtLocal).toISOString() : null;
 
   const amount = qty > 0 && price > 0 ? computeExecutionAmount({ side, qty, price, region }) : null;
 
@@ -199,7 +213,7 @@ export function ExecutionFormDialog({
   const canSubmit =
     qty > 0 &&
     price > 0 &&
-    !!executedAt &&
+    (isOpeningBalance || !!executedAt) &&
     !oversold &&
     (isNewHolding
       ? !!newHolding.groupId &&
@@ -209,7 +223,10 @@ export function ExecutionFormDialog({
       : !!selected);
 
   const accountOptions = useMemo(
-    () => [...new Set(holdings.map((h) => h.account).filter((a): a is string => !!a))].sort((a, b) => a.localeCompare(b, 'ko')),
+    () =>
+      [...new Set(holdings.map((h) => h.account).filter((a): a is string => !!a))].sort((a, b) =>
+        a.localeCompare(b, 'ko'),
+      ),
     [holdings],
   );
   const holdingComboItems = useMemo(
@@ -251,10 +268,15 @@ export function ExecutionFormDialog({
     else if (selected) prefillNoteIfEmpty(selected.id);
   }
 
+  /** 새 종목은 항상 매수만 가능하다 — 아직 갖고 있지 않은 걸 팔 수는 없다. */
   function toggleNewHolding() {
-    setIsNewHolding((v) => !v);
+    setIsNewHolding((v) => {
+      const next = !v;
+      if (next) setSide('BUY');
+      else setIsOpeningBalance(false);
+      return next;
+    });
     setIsCash(false);
-    setIsOpeningBalance(false);
   }
 
   function selectCashCurrency(cashRegion: Region, checked: boolean) {
@@ -277,10 +299,7 @@ export function ExecutionFormDialog({
     if (!canSubmit || !amount) return;
     const execution: Omit<NewExecution, 'holdingId'> = {
       side,
-      // 수정 모드는 원래 intent를 그대로 유지한다 — 기초잔고 체결도 이 폼으로 고칠 수
-      // 있어야 하는데(예: 수량 오타 수정), 여기서 'NEW'로 덮어쓰면 기초잔고 표시가
-      // 사라진다.
-      intent: editingExecution ? editingExecution.intent : isNewHolding && isOpeningBalance ? 'OPENING_BALANCE' : 'NEW',
+      intent: isOpeningBalance ? 'OPENING_BALANCE' : 'NEW',
       executedAt,
       qty,
       price,
@@ -303,9 +322,7 @@ export function ExecutionFormDialog({
           avgPrice: 0,
           account: newHolding.account,
           region: newHolding.region,
-          // 자산종류는 필수값이지만 여기서는 안 받는다 — 기본값 ETF로 만들고
-          // 보유종목 화면에서 나중에 고칠 수 있다 (ADR-0047).
-          assetType: 'ETF',
+          assetType: newHolding.assetType,
           sortOrder: 0,
         },
         execution,
@@ -327,23 +344,35 @@ export function ExecutionFormDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2">
-            {(['BUY', 'SELL'] as Side[]).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => handleSideChange(s)}
-                className={cn(
-                  'rounded-lg border py-2 text-sm font-semibold transition-colors',
-                  side === s
-                    ? 'border-primary bg-accent text-accent-foreground'
-                    : 'border-border text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {s === 'BUY' ? '매수' : '매도'}
-              </button>
-            ))}
-          </div>
+          {/* 새 종목은 아직 하나도 없는 걸 파는 게 성립하지 않으므로 매수 고정,
+              수정 모드는 매매 구분 자체를 바꿀 수 없다(ADR-0049) — 이 두 경우엔
+              토글 대신 지금 값을 고정 라벨로만 보여준다. */}
+          {isNewHolding || editingExecution ? (
+            <div
+              className="rounded-lg border border-border bg-muted/40 py-2 text-center text-sm font-semibold"
+              style={{ color: side === 'BUY' ? 'var(--diff-rise)' : 'var(--diff-fall)' }}
+            >
+              {side === 'BUY' ? '매수' : '매도'}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {(['BUY', 'SELL'] as Side[]).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => handleSideChange(s)}
+                  className={cn(
+                    'rounded-lg border py-2 text-sm font-semibold transition-colors',
+                    side === s
+                      ? 'border-primary bg-accent text-accent-foreground'
+                      : 'border-border text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {s === 'BUY' ? '매수' : '매도'}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
@@ -361,126 +390,138 @@ export function ExecutionFormDialog({
               )}
             </div>
             {isNewHolding ? (
-              <div className="flex flex-col gap-2.5 rounded-lg border border-dashed border-border p-2.5">
-                <div className="flex gap-2.5">
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Label className="text-[11px]">
-                      자산군 <span className="text-destructive">*</span>
-                    </Label>
-                    <Select
-                      items={groupOptions.map((g) => ({ label: g.name, value: g.id }))}
-                      value={newHolding.groupId}
-                      onValueChange={(v) => v && setNewHolding((d) => ({ ...d, groupId: v }))}
-                    >
-                      <SelectTrigger className="h-8 w-full text-xs">
-                        <SelectValue placeholder="선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {groupOptions.map((g) => (
-                          <SelectItem key={g.id} value={g.id}>
-                            {g.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+              <>
+                <div className="flex flex-col gap-2.5 rounded-lg border border-dashed border-border p-2.5">
+                  <div className="flex gap-2.5">
+                    <div className="flex flex-1 flex-col gap-1.5">
+                      <Label className="text-[11px]">
+                        자산군 <span className="text-destructive">*</span>
+                      </Label>
+                      <Select
+                        items={groupOptions.map((g) => ({ label: g.name, value: g.id }))}
+                        value={newHolding.groupId}
+                        onValueChange={(v) => v && setNewHolding((d) => ({ ...d, groupId: v }))}
+                      >
+                        <SelectTrigger className="h-8 w-full text-xs">
+                          <SelectValue placeholder="선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {groupOptions.map((g) => (
+                            <SelectItem key={g.id} value={g.id}>
+                              {g.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-1 flex-col gap-1.5">
+                      <Label className="text-[11px]">
+                        자산종류 <span className="text-destructive">*</span>
+                      </Label>
+                      <Select
+                        items={ASSET_TYPE_ITEMS}
+                        value={newHolding.assetType}
+                        onValueChange={(v) => v && setNewHolding((d) => ({ ...d, assetType: v as AssetType }))}
+                      >
+                        <SelectTrigger className="h-8 w-full text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ASSET_TYPE_ITEMS.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>
+                              {item.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div className="flex w-20 flex-col gap-1.5">
-                    <Label className="text-[11px]">
-                      지역 <span className="text-destructive">*</span>
-                    </Label>
-                    <Select
-                      items={[
-                        { label: '국내', value: '국내' },
-                        { label: '해외', value: '해외' },
-                      ]}
-                      value={newHolding.region}
-                      onValueChange={(v) => v && setNewHolding((d) => ({ ...d, region: v as Region }))}
-                    >
-                      <SelectTrigger className="h-8 w-full text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="국내">국내</SelectItem>
-                        <SelectItem value="해외">해외</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="flex gap-2.5">
+                    <div className="flex w-20 flex-col gap-1.5">
+                      <Label className="text-[11px]">
+                        지역 <span className="text-destructive">*</span>
+                      </Label>
+                      <Select
+                        items={[
+                          { label: '국내', value: '국내' },
+                          { label: '해외', value: '해외' },
+                        ]}
+                        value={newHolding.region}
+                        onValueChange={(v) => v && setNewHolding((d) => ({ ...d, region: v as Region }))}
+                      >
+                        <SelectTrigger className="h-8 w-full text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="국내">국내</SelectItem>
+                          <SelectItem value="해외">해외</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-1 flex-col gap-1.5">
+                      <Label className="text-[11px]">
+                        계좌 <span className="text-destructive">*</span>
+                      </Label>
+                      <Select
+                        items={ACCOUNT_TYPES.map((v) => ({ label: v, value: v }))}
+                        value={newHolding.account}
+                        onValueChange={(v) => v && setNewHolding((d) => ({ ...d, account: v }))}
+                      >
+                        <SelectTrigger className="h-8 w-full text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ACCOUNT_TYPES.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {t}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="flex gap-2.5">
+                    <div className="flex w-24 flex-col gap-1.5">
+                      <Label className="text-[11px]">
+                        {newHolding.region === '국내' ? '코드' : '티커'}{' '}
+                        {!isCash && <span className="text-destructive">*</span>}
+                      </Label>
+                      <Input
+                        value={isCash ? '' : newHolding.ticker}
+                        onChange={(e) => setNewHolding((d) => ({ ...d, ticker: e.target.value }))}
+                        disabled={isCash}
+                        className="h-8 font-mono text-xs"
+                      />
+                    </div>
+                    <div className="flex flex-1 flex-col gap-1.5">
+                      <Label className="text-[11px]">
+                        종목명 <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        value={newHolding.name}
+                        onChange={(e) => setNewHolding((d) => ({ ...d, name: e.target.value }))}
+                        className="h-8 text-xs"
+                      />
+                    </div>
                   </div>
                 </div>
-                <div className="flex gap-2.5">
-                  <div className="flex w-24 flex-col gap-1.5">
-                    <Label className="text-[11px]">
-                      {newHolding.region === '국내' ? '코드' : '티커'} {!isCash && <span className="text-destructive">*</span>}
-                    </Label>
-                    <Input
-                      value={isCash ? '' : newHolding.ticker}
-                      onChange={(e) => setNewHolding((d) => ({ ...d, ticker: e.target.value }))}
-                      disabled={isCash}
-                      className="h-8 font-mono text-xs"
-                    />
-                  </div>
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Label className="text-[11px]">
-                      종목명 <span className="text-destructive">*</span>
-                    </Label>
-                    <Input
-                      value={newHolding.name}
-                      onChange={(e) => setNewHolding((d) => ({ ...d, name: e.target.value }))}
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2.5">
-                  <div className="flex flex-1 flex-col gap-1.5">
-                    <Label className="text-[11px]">계좌</Label>
-                    <Select
-                      items={ACCOUNT_TYPES.map((v) => ({ label: v, value: v }))}
-                      value={newHolding.account}
-                      onValueChange={(v) => v && setNewHolding((d) => ({ ...d, account: v }))}
-                    >
-                      <SelectTrigger className="h-8 w-full text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ACCOUNT_TYPES.map((t) => (
-                          <SelectItem key={t} value={t}>
-                            {t}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 border-t border-border pt-2">
-                  <label className="flex items-center gap-1.5 text-xs">
-                    <Checkbox
-                      checked={isCash && newHolding.region === '국내'}
-                      onCheckedChange={(c) => selectCashCurrency('국내', !!c)}
-                    />
-                    KRW
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs">
-                    <Checkbox
-                      checked={isCash && newHolding.region === '해외'}
-                      onCheckedChange={(c) => selectCashCurrency('해외', !!c)}
-                    />
-                    $
-                  </label>
-                  <span className="text-[10px] text-muted-foreground">체크하면 코드 없이 종목명·금액만으로 등록</span>
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <label className="flex items-center gap-1.5 text-xs">
-                    <Checkbox checked={isOpeningBalance} onCheckedChange={(c) => setIsOpeningBalance(!!c)} />
-                    이미 보유하고 있던 종목 등록
-                  </label>
-                  <span className="ml-5.5 text-[10px] text-muted-foreground">
-                    오늘 실제로 산 게 아니라 예전부터 있던 잔고를 기록하는 것
-                  </span>
-                </div>
-              </div>
+
+                <label className="flex items-center gap-1.5 text-sm">
+                  <Checkbox checked={isOpeningBalance} onCheckedChange={(c) => setIsOpeningBalance(!!c)} />
+                  기초잔고
+                </label>
+                <span className="-mt-2 ml-5.5 text-[10px] text-muted-foreground">
+                  매매일지를 쓰기 전부터 갖고 있던 잔고입니다. 매매일 없이 저장되고, 매매 횟수·보유일수 집계에서
+                  빠집니다.
+                </span>
+              </>
             ) : (
               <div className="flex flex-col gap-1.5">
                 <Select
-                  items={[{ label: '전체', value: ALL_ACCOUNTS }, ...accountOptions.map((a) => ({ label: a, value: a }))]}
+                  items={[
+                    { label: '전체', value: ALL_ACCOUNTS },
+                    ...accountOptions.map((a) => ({ label: a, value: a })),
+                  ]}
                   value={accountFilter}
                   onValueChange={(v) => v && handleAccountFilterChange(v)}
                   disabled={!!editingExecution}
@@ -507,7 +548,11 @@ export function ExecutionFormDialog({
                   <ComboboxContent>
                     <ComboboxEmpty>검색 결과가 없습니다.</ComboboxEmpty>
                     <ComboboxList>
-                      {(item: HoldingComboItem) => <ComboboxItem key={item.value} value={item}>{item.label}</ComboboxItem>}
+                      {(item: HoldingComboItem) => (
+                        <ComboboxItem key={item.value} value={item}>
+                          {item.label}
+                        </ComboboxItem>
+                      )}
                     </ComboboxList>
                   </ComboboxContent>
                 </Combobox>
@@ -584,17 +629,39 @@ export function ExecutionFormDialog({
             </div>
           )}
 
-          <div className="flex flex-col gap-1.5">
-            <Label>
-              체결일시 <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              type="datetime-local"
-              value={executedAtLocal}
-              onChange={(e) => setExecutedAtLocal(e.target.value)}
-              className="font-mono"
-            />
-          </div>
+          {isNewHolding && (
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-1.5 text-xs">
+                <Checkbox
+                  checked={isCash && newHolding.region === '국내'}
+                  onCheckedChange={(c) => selectCashCurrency('국내', !!c)}
+                />
+                KRW
+              </label>
+              <label className="flex items-center gap-1.5 text-xs">
+                <Checkbox
+                  checked={isCash && newHolding.region === '해외'}
+                  onCheckedChange={(c) => selectCashCurrency('해외', !!c)}
+                />
+                $
+              </label>
+              <span className="text-[10px] text-muted-foreground">체크하면 코드 없이 종목명·금액만으로 등록</span>
+            </div>
+          )}
+
+          {!isOpeningBalance && (
+            <div className="flex flex-col gap-1.5">
+              <Label>
+                체결일시 <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                type="datetime-local"
+                value={executedAtLocal}
+                onChange={(e) => setExecutedAtLocal(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+          )}
 
           {/* 선택 입력 — 채우지 않아도 저장할 수 있다. 매수/매도 동일한 형태다. */}
           <div className="flex flex-col gap-1.5">
@@ -621,8 +688,7 @@ export function ExecutionFormDialog({
 
           {oversold && (
             <p className="text-xs text-destructive">
-              보유 수량({fmtQty(available)})보다 많이 매도할 수 없습니다. 기초잔고가 빠졌다면 &ldquo;+ 새 종목&rdquo;에서
-              이미 보유하고 있던 종목으로 먼저 등록해주세요.
+              보유 수량({fmtQty(available)})보다 많이 매도할 수 없습니다. 매수를 먼저 기록해 수량을 채워주세요.
             </p>
           )}
         </div>
@@ -640,17 +706,7 @@ export function ExecutionFormDialog({
   );
 }
 
-function Row({
-  label,
-  value,
-  hint,
-  strong,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  strong?: boolean;
-}) {
+function Row({ label, value, hint, strong }: { label: string; value: string; hint?: string; strong?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-2">
       <span className="text-muted-foreground">

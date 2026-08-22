@@ -35,8 +35,18 @@ export interface ReplayResult {
   oversold: { executionId: string; executedAt: string; qty: number; available: number }[];
 }
 
+/**
+ * 기초잔고(OPENING_BALANCE)는 날짜가 없으므로(ADR-0048) 날짜로 정렬할 수
+ * 없다 — 대신 "종목이 갖고 있던 가장 처음 상태"라는 의미 그대로 항상 맨 앞에
+ * 둔다. 종목당 기초잔고는 최대 1건이라(DB 유니크 인덱스) 나머지는 실제 매매
+ * (NEW, 항상 날짜 있음)끼리 시간순으로 비교하면 된다.
+ */
 function byExecutedAtThenId(a: Execution, b: Execution) {
-  const t = new Date(a.executedAt).getTime() - new Date(b.executedAt).getTime();
+  const aOpening = a.intent === "OPENING_BALANCE";
+  const bOpening = b.intent === "OPENING_BALANCE";
+  if (aOpening !== bOpening) return aOpening ? -1 : 1;
+  if (aOpening && bOpening) return a.id.localeCompare(b.id);
+  const t = new Date(a.executedAt as string).getTime() - new Date(b.executedAt as string).getTime();
   if (t !== 0) return t;
   return a.id.localeCompare(b.id);
 }
@@ -84,9 +94,12 @@ export function replayHolding(executions: Execution[], ctx: ReplayContext): Repl
       continue;
     }
 
-    // SELL
+    // SELL — 기초잔고는 개념상 항상 BUY 방향이라 side가 SELL이면 반드시 실제
+    // 매매(NEW)이고, NEW는 DB 제약상 executedAt이 항상 있다 (ADR-0048).
+    const executedAt = e.executedAt as string;
+
     if (execQty - qty > QTY_TOLERANCE) {
-      oversold.push({ executionId: e.id, executedAt: e.executedAt, qty: execQty, available: qty });
+      oversold.push({ executionId: e.id, executedAt, qty: execQty, available: qty });
       continue;
     }
 
@@ -104,12 +117,12 @@ export function replayHolding(executions: Execution[], ctx: ReplayContext): Repl
 
     closedLots.push({
       executionId: e.id,
-      closedAt: e.executedAt,
+      closedAt: executedAt,
       quantitySold: execQty,
       avgEntryPrice: avgPrice,
       exitPrice: e.price,
       realizedPnl: proceeds - costOut,
-      holdingDays: openedAt ? calendarDayDiff(openedAt, e.executedAt) : 0,
+      holdingDays: openedAt ? calendarDayDiff(openedAt, executedAt) : 0,
       isFullExit: qty === 0,
     });
 

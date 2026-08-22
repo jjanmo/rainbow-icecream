@@ -24,8 +24,9 @@ export interface Execution {
   holdingId: string;
   side: Side;
   intent: ExecutionIntent;
-  /** ISO8601 */
-  executedAt: string;
+  /** ISO8601. 기초잔고(OPENING_BALANCE)는 "매매일"이 없는 개념이라 null이다 —
+   * 실제 매매(NEW)만 항상 값이 있다 (ADR-0048). */
+  executedAt: string | null;
   qty: number;
   /** 종목의 원래 통화 기준 단가. */
   price: number;

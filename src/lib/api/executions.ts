@@ -7,7 +7,7 @@ interface ExecutionRow {
   holding_id: string;
   side: Side;
   intent: ExecutionIntent;
-  executed_at: string;
+  executed_at: string | null;
   qty: number;
   price: number;
   created_at: string;

@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { ExecutionDetailDialog } from '@/components/journal/ExecutionDetailDialog';
 import {
   ExecutionFormDialog,
   type ExecutionNoteDraft,
@@ -14,8 +13,20 @@ import {
   type ExecutionsFilter,
 } from '@/components/journal/ExecutionsFilterBar';
 import { ExecutionsTable } from '@/components/journal/ExecutionsTable';
+import { OpeningBalanceHelp } from '@/components/journal/OpeningBalanceHelp';
 import { DataErrorNotice } from '@/components/shared/DataErrorNotice';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAddExecution, useDeleteExecution, useExecutions, useUpdateExecution } from '@/hooks/useExecutions';
 import { useGroups } from '@/hooks/useGroups';
@@ -60,24 +71,20 @@ export default function JournalPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingExecution, setEditingExecution] = useState<Execution | null>(null);
   const [filter, setFilter] = useState<ExecutionsFilter>(ALL_EXECUTIONS_FILTER);
-  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  const [detailExecution, setDetailExecution] = useState<Execution | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Execution | null>(null);
+  const [openingBalanceListOpen, setOpeningBalanceListOpen] = useState(false);
 
   const holdings = useMemo(() => holdingsQuery.data ?? [], [holdingsQuery.data]);
   const holdingById = useMemo(() => new Map(holdings.map((h) => [h.id, h])), [holdings]);
   const tradeNotes = useMemo(() => tradeNotesQuery.data ?? [], [tradeNotesQuery.data]);
-  // 체결 id로 근거를 바로 찾을 수 있게 미리 맵으로 만들어 둔다.
-  const noteByExecutionId = useMemo(() => {
-    const map = new Map<string, (typeof tradeNotes)[number]>();
-    for (const n of tradeNotes) map.set(n.executionId, n);
-    return map;
-  }, [tradeNotes]);
 
-  // 기초잔고 체결도 이제 일지에 그대로 보인다 — 배지로 구분하고("기초잔고"), 실제
-  // 매매가 아니므로 매수/매도 합계 집계에서만 뺀다(아래 summary 계산부 참고) (ADR-0044).
+  // 기초잔고는 날짜가 없어(ADR-0048) 캘린더에 실을 수 없다 — 별도 목록(아래
+  // openingBalanceExecutions)에서만 보여준다. 실제 매매가 아니므로 애초에
+  // 매수/매도 집계에도 넣지 않는다는 점은 그대로다 (ADR-0044).
   const executionsByDay = useMemo(() => {
     const map = new Map<string, Execution[]>();
     for (const e of executionsQuery.data ?? []) {
+      if (e.intent === 'OPENING_BALANCE' || !e.executedAt) continue;
       const key = localDayKey(e.executedAt);
       const arr = map.get(key) ?? [];
       arr.push(e);
@@ -85,6 +92,11 @@ export default function JournalPage() {
     }
     return map;
   }, [executionsQuery.data]);
+
+  const openingBalanceExecutions = useMemo(
+    () => (executionsQuery.data ?? []).filter((e) => e.intent === 'OPENING_BALANCE'),
+    [executionsQuery.data],
+  );
 
   // 매도 체결 하나당 실현손익 1건 — 종목별로 전체 이력을 리플레이해서 얻는다
   // (replayHolding은 순수 함수라 여기서 다시 돌려도 안전하다, ADR-0032). 거래
@@ -127,17 +139,13 @@ export default function JournalPage() {
   const rateForExecution = useMemo(() => {
     const rates = fxQuery.data?.rates;
     if (!rates) return undefined;
-    return (e: Execution) => rates[localDayKey(e.executedAt)];
+    return (e: Execution) => (e.executedAt ? rates[localDayKey(e.executedAt)] : undefined);
   }, [fxQuery.data]);
 
+  // monthExecutions는 executionsByDay에서 파생되고, 그쪽이 이미 기초잔고를 뺐으므로
+  // 여기서 다시 거를 필요가 없다.
   const monthSummary = useMemo(
-    () =>
-      summarizeExecutions(
-        monthExecutions.filter((e) => e.intent !== 'OPENING_BALANCE'),
-        holdingById,
-        closedLotByExecutionId,
-        rateForExecution,
-      ),
+    () => summarizeExecutions(monthExecutions, holdingById, closedLotByExecutionId, rateForExecution),
     [monthExecutions, holdingById, closedLotByExecutionId, rateForExecution],
   );
 
@@ -162,13 +170,7 @@ export default function JournalPage() {
     [selectedDay, executionsByDay],
   );
   const daySummary = useMemo(
-    () =>
-      summarizeExecutions(
-        dayList.filter((e) => e.intent !== 'OPENING_BALANCE'),
-        holdingById,
-        closedLotByExecutionId,
-        rateForExecution,
-      ),
+    () => summarizeExecutions(dayList, holdingById, closedLotByExecutionId, rateForExecution),
     [dayList, holdingById, closedLotByExecutionId, rateForExecution],
   );
 
@@ -213,21 +215,10 @@ export default function JournalPage() {
     setDialogOpen(true);
   }
 
-  function openDetailDialog(execution: Execution) {
-    setDetailExecution(execution);
-    setDetailDialogOpen(true);
-  }
-
-  function handleDetailEdit() {
-    if (!detailExecution) return;
-    setDetailDialogOpen(false);
-    openEditDialog(detailExecution);
-  }
-
-  function handleDetailDelete() {
-    if (!detailExecution) return;
-    setDetailDialogOpen(false);
-    handleDelete(detailExecution);
+  function handleConfirmDelete() {
+    if (!deleteTarget) return;
+    handleDelete(deleteTarget);
+    setDeleteTarget(null);
   }
 
   async function handleSubmit(submit: ExecutionSubmit) {
@@ -318,9 +309,18 @@ export default function JournalPage() {
             체결을 기록하면 보유 현황이 그 기록에서 자동으로 계산됩니다.
           </p>
         </div>
-        <Button onClick={openAddDialog} disabled={(groupsQuery.data ?? []).length === 0}>
-          + 매매 추가
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setOpeningBalanceListOpen(true)}
+            disabled={openingBalanceExecutions.length === 0}
+          >
+            기초잔고 보기
+          </Button>
+          <Button onClick={openAddDialog} disabled={(groupsQuery.data ?? []).length === 0}>
+            + 매매 추가
+          </Button>
+        </div>
       </div>
 
       {isError && <DataErrorNotice error={error} />}
@@ -414,7 +414,8 @@ export default function JournalPage() {
                 holdingById={holdingById}
                 closedLotByExecutionId={closedLotByExecutionId}
                 rateForExecution={rateForExecution}
-                onRowClick={openDetailDialog}
+                onEdit={openEditDialog}
+                onDelete={setDeleteTarget}
               />
             </div>
           </div>
@@ -433,17 +434,48 @@ export default function JournalPage() {
         onUpdate={handleUpdate}
       />
 
-      <ExecutionDetailDialog
-        execution={detailExecution}
-        open={detailDialogOpen}
-        onOpenChange={setDetailDialogOpen}
-        holding={detailExecution ? holdingById.get(detailExecution.holdingId) : undefined}
-        closedLot={detailExecution ? closedLotByExecutionId.get(detailExecution.id) : undefined}
-        note={detailExecution ? noteByExecutionId.get(detailExecution.id) : undefined}
-        krwRate={detailExecution ? rateForExecution?.(detailExecution) : undefined}
-        onEdit={handleDetailEdit}
-        onDelete={handleDetailDelete}
-      />
+      <Dialog open={openingBalanceListOpen} onOpenChange={setOpeningBalanceListOpen}>
+        <DialogContent className="scrollbar-hidden max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-1.5">
+              기초잔고
+              <OpeningBalanceHelp />
+            </DialogTitle>
+          </DialogHeader>
+          {/* 날짜·실현손익 열은 뺀다 — 기초잔고는 예전부터 갖고 있던 베이스일 뿐,
+              매매일(ADR-0048)도 매도 이력도 없어서 항상 비어 보였다. */}
+          <ExecutionsTable
+            executions={openingBalanceExecutions}
+            holdingById={holdingById}
+            closedLotByExecutionId={closedLotByExecutionId}
+            showDateColumn={false}
+            showRealizedPnlColumn={false}
+            onEdit={(execution) => {
+              setOpeningBalanceListOpen(false);
+              openEditDialog(execution);
+            }}
+            onDelete={(execution) => {
+              setOpeningBalanceListOpen(false);
+              setDeleteTarget(execution);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>체결 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              삭제하면 이후 구간이 다시 계산됩니다. 기록 자체는 남아있고, 목록에서만 사라집니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete}>삭제</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

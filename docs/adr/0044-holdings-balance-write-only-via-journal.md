@@ -1,7 +1,7 @@
 # ADR-0044: holdings.qty/avg_price는 매매일지를 통해서만 바뀐다 (보유종목 화면은 읽기 전용)
 
 ## Status
-Accepted
+Partially superseded by [ADR-0048](./0048-opening-balance-no-date.md)(기초잔고는 날짜 없이, 캘린더에서 제외) and [ADR-0049](./0049-execution-row-inline-actions.md)(상세 모달 대신 인라인 수정/삭제, intent 유지 로직도 체크박스 기반으로 대체). holdings.qty/avg_price가 매매일지를 통해서만 바뀐다는 핵심 결정 자체는 유지된다.
 
 ## Context
 

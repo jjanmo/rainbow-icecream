@@ -49,10 +49,13 @@
 | [0041](./0041-simplify-intent-and-trade-notes.md) | 매매 의도 세부 구분 제거, 근거를 태그+자유서술로 단순화 | Partially superseded by ADR-0042 |
 | [0042](./0042-remove-trade-note-tags.md) | 근거 태그 제거, 자유 서술만 남김 | Accepted |
 | [0043](./0043-drop-note-target-type.md) | trade_notes의 target_type/target_key를 없애고 execution_id FK로 교체 | Accepted |
-| [0044](./0044-holdings-balance-write-only-via-journal.md) | holdings.qty/avg_price는 매매일지를 통해서만 변경 (보유종목 화면은 읽기 전용) | Accepted |
+| [0044](./0044-holdings-balance-write-only-via-journal.md) | holdings.qty/avg_price는 매매일지를 통해서만 변경 (보유종목 화면은 읽기 전용) | Partially superseded by ADR-0048, ADR-0049 |
 | [0045](./0045-holdings-soft-delete.md) | 종목 삭제를 소프트 삭제로, 삭제 전 확인창 추가 | Accepted (view/restore UI removed, see note) |
 | [0046](./0046-asset-type-remove-memo.md) | 자산타입 필드 추가, 비고(메모) 필드 제거 | Partially superseded by ADR-0047 |
-| [0047](./0047-asset-type-required-labels.md) | 자산종류를 필수값으로, 표기·라벨 다듬기 (개별 주식 등) | Accepted |
+| [0047](./0047-asset-type-required-labels.md) | 자산종류를 필수값으로, 표기·라벨 다듬기 (개별 주식 등) | Partially superseded by ADR-0050 |
+| [0048](./0048-opening-balance-no-date.md) | 기초잔고는 날짜 없이 기록, 매매일지 캘린더에서 제외 | Partially superseded by ADR-0050 |
+| [0049](./0049-execution-row-inline-actions.md) | 체결 목록 인라인 수정/삭제 버튼 복원, 수정 시 매매 구분 고정 | Accepted |
+| [0050](./0050-opening-balance-new-holding-only.md) | 기초잔고는 "+ 새 종목" 전용, 새 종목은 매수 고정, 새 종목 흐름에 자산종류 추가 | Accepted |
 
 ## 새 ADR 작성 형식
 

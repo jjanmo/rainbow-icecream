@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
-import { OpeningBalanceBadge } from '@/components/journal/OpeningBalanceBadge';
+import { ArrowDown, ArrowUp, ArrowUpDown, Pencil, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { returnColor } from '@/lib/calc/rebalance';
 import { computeExecutionAmount, currencyOf } from '@/lib/journal/cost';
@@ -54,8 +54,12 @@ function buildRow(
   return { execution, holding, closedLot, grossAmount, krwRate, amountKrw, pnlKrw };
 }
 
+/** 기초잔고는 날짜가 없다(ADR-0048) — 개념상 가장 이른 시점이므로 맨 앞으로 보낸다. */
 function byExecutedAtThenId(a: Row, b: Row): number {
-  return a.execution.executedAt.localeCompare(b.execution.executedAt) || a.execution.id.localeCompare(b.execution.id);
+  return (
+    (a.execution.executedAt ?? '').localeCompare(b.execution.executedAt ?? '') ||
+    a.execution.id.localeCompare(b.execution.id)
+  );
 }
 
 function compareRows(a: Row, b: Row, sort: SortState | null): number {
@@ -105,8 +109,9 @@ function SortableHeaderLabel({
   );
 }
 
-/** 로컬 시간대 'MM/DD HH:mm'. */
-function formatDateTime(iso: string): string {
+/** 로컬 시간대 'MM/DD HH:mm'. 기초잔고(날짜 없음, ADR-0048)는 대시로 표시한다. */
+function formatDateTime(iso: string | null): string {
+  if (!iso) return '—';
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -117,18 +122,29 @@ export function ExecutionsTable({
   holdingById,
   closedLotByExecutionId,
   rateForExecution,
-  onRowClick,
+  onEdit,
+  onDelete,
+  showDateColumn = true,
+  showRealizedPnlColumn = true,
 }: {
   executions: Execution[];
   holdingById: Map<string, Holding>;
   closedLotByExecutionId: Map<string, ClosedLot>;
   rateForExecution?: (execution: Execution) => number | undefined;
-  onRowClick: (execution: Execution) => void;
+  onEdit: (execution: Execution) => void;
+  onDelete: (execution: Execution) => void;
+  /** 기초잔고 목록(ADR-0048, 날짜가 없다)처럼 날짜가 의미 없는 맥락에서는 꺼서 열 자체를 없앤다. */
+  showDateColumn?: boolean;
+  /** 기초잔고는 그 자체가 매도된 적 없는 시작점이라 실현손익이 항상 비어 있다 — 같은 이유로 끌 수 있다. */
+  showRealizedPnlColumn?: boolean;
 }) {
   const [sort, setSort] = useState<SortState | null>(null);
 
   const rows = useMemo(
-    () => executions.map((e) => buildRow(e, holdingById.get(e.holdingId), closedLotByExecutionId.get(e.id), rateForExecution)),
+    () =>
+      executions.map((e) =>
+        buildRow(e, holdingById.get(e.holdingId), closedLotByExecutionId.get(e.id), rateForExecution),
+      ),
     [executions, holdingById, closedLotByExecutionId, rateForExecution],
   );
   const sortedRows = useMemo(() => [...rows].sort((a, b) => compareRows(a, b, sort)), [rows, sort]);
@@ -142,9 +158,11 @@ export function ExecutionsTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>
-            <SortableHeaderLabel label="날짜" sortKey="executedAt" sort={sort} onSort={handleSort} />
-          </TableHead>
+          {showDateColumn && (
+            <TableHead>
+              <SortableHeaderLabel label="날짜" sortKey="executedAt" sort={sort} onSort={handleSort} />
+            </TableHead>
+          )}
           <TableHead>
             <SortableHeaderLabel label="구분" sortKey="side" sort={sort} onSort={handleSort} />
           </TableHead>
@@ -156,9 +174,12 @@ export function ExecutionsTable({
           <TableHead className="text-right">
             <SortableHeaderLabel label="총액" sortKey="amount" sort={sort} onSort={handleSort} />
           </TableHead>
-          <TableHead className="text-right">
-            <SortableHeaderLabel label="실현손익" sortKey="realizedPnl" sort={sort} onSort={handleSort} />
-          </TableHead>
+          {showRealizedPnlColumn && (
+            <TableHead className="text-right">
+              <SortableHeaderLabel label="실현손익" sortKey="realizedPnl" sort={sort} onSort={handleSort} />
+            </TableHead>
+          )}
+          <TableHead className="text-right" />
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -167,18 +188,17 @@ export function ExecutionsTable({
           const fmt = (n: number) => (currency === 'USD' ? fmtUsd(n) : fmtWon(n));
           const isBuy = e.side === 'BUY';
           return (
-            <TableRow key={e.id} className="cursor-pointer" onClick={() => onRowClick(e)}>
-              <TableCell className="text-xs text-muted-foreground">{formatDateTime(e.executedAt)}</TableCell>
+            <TableRow key={e.id}>
+              {showDateColumn && (
+                <TableCell className="text-xs text-muted-foreground">{formatDateTime(e.executedAt)}</TableCell>
+              )}
               <TableCell>
-                <div className="flex items-center gap-1">
-                  <span
-                    className="rounded px-1.5 py-0.5 text-[11px] font-semibold"
-                    style={{ color: isBuy ? 'var(--diff-rise)' : 'var(--diff-fall)' }}
-                  >
-                    {isBuy ? '매수' : '매도'}
-                  </span>
-                  {e.intent === 'OPENING_BALANCE' && <OpeningBalanceBadge />}
-                </div>
+                <span
+                  className="rounded px-1.5 py-0.5 text-[11px] font-semibold"
+                  style={{ color: isBuy ? 'var(--diff-rise)' : 'var(--diff-fall)' }}
+                >
+                  {isBuy ? '매수' : '매도'}
+                </span>
               </TableCell>
               <TableCell>
                 <div className="text-[13px] font-semibold">{holding?.name ?? '삭제된 종목'}</div>
@@ -188,21 +208,36 @@ export function ExecutionsTable({
               <TableCell className="text-right font-mono text-xs">{fmt(e.price)}</TableCell>
               <TableCell className="text-right font-mono text-xs">
                 {fmt(grossAmount)}
-                {currency === 'USD' && (
+                {/* rateForExecution이 아예 안 넘어온 맥락(기초잔고 목록 — 날짜가 없어
+                    환율을 조회할 대상 자체가 없다, ADR-0048)에서는 "조회 중"이라고
+                    거짓 안내하지 않고 그냥 원래 통화 금액만 보여준다. */}
+                {currency === 'USD' && rateForExecution && (
                   <div className="text-[11px] text-muted-foreground">
                     {krwRate !== undefined ? `≈ ${fmtWon(grossAmount * krwRate)}` : '환율 조회 중...'}
                   </div>
                 )}
               </TableCell>
-              <TableCell className="text-right font-mono text-xs">
-                {closedLot ? (
-                  <span className="font-semibold" style={{ color: returnColor(closedLot.realizedPnl) }}>
-                    {closedLot.realizedPnl >= 0 ? '+' : ''}
-                    {fmt(closedLot.realizedPnl)}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
+              {showRealizedPnlColumn && (
+                <TableCell className="text-right font-mono text-xs">
+                  {closedLot ? (
+                    <span className="font-semibold" style={{ color: returnColor(closedLot.realizedPnl) }}>
+                      {closedLot.realizedPnl >= 0 ? '+' : ''}
+                      {fmt(closedLot.realizedPnl)}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+              )}
+              <TableCell className="text-right">
+                <div className="flex items-center justify-end gap-0.5">
+                  <Button variant="ghost" size="icon-xs" onClick={() => onEdit(e)} className="text-muted-foreground">
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon-xs" onClick={() => onDelete(e)} className="text-muted-foreground">
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           );

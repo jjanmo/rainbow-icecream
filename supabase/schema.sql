@@ -106,7 +106,9 @@ create table if not exists executions (
   -- 세부 매매 의도(신규진입/추가매수/...) 구분은 뺐다 (ADR-0041) — OPENING_BALANCE
   -- 표시(기초잔고 vs 실제 매매 구분, ADR-0027)만 유지하면 되고 나머지는 UI에서 안 쓴다.
   intent text not null default 'NEW' check (intent in ('OPENING_BALANCE', 'NEW')),
-  executed_at timestamptz not null,
+  -- 기초잔고는 "매매일"이라는 게 없는 개념이라 날짜를 강제하지 않는다 — 실제
+  -- 매매(NEW)만 필수다 (ADR-0048, 아래 executions_executed_at_required_for_trade).
+  executed_at timestamptz,
   qty numeric not null check (qty > 0),
   /** In the holding's native currency (KRW for 국내, USD for 해외). */
   price numeric not null check (price >= 0),
@@ -117,7 +119,8 @@ create table if not exists executions (
   /** soft delete — physical deletes would make past 실현손익 unexplainable (ADR-0032). */
   deleted_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint executions_executed_at_required_for_trade check (intent = 'OPENING_BALANCE' or executed_at is not null)
 );
 
 -- Replay always scans one holding's rows in executed_at order, so this is the
@@ -328,3 +331,15 @@ alter table holdings drop column if exists memo;
 update holdings set asset_type = 'ETF' where asset_type is null;
 alter table holdings alter column asset_type set not null;
 alter table holdings alter column asset_type set default 'ETF';
+
+-- ---------------------------------------------------------------------------
+-- Migration: 기초잔고는 날짜 없이 기록 (ADR-0048). 실제 매매(NEW)만 executed_at이
+-- 필수다. 기존 기초잔고 행의 날짜도 비워서 예외 없는 불변식으로 만든다. Idempotent.
+-- ---------------------------------------------------------------------------
+alter table executions alter column executed_at drop not null;
+
+alter table executions drop constraint if exists executions_executed_at_required_for_trade;
+alter table executions add constraint executions_executed_at_required_for_trade
+  check (intent = 'OPENING_BALANCE' or executed_at is not null);
+
+update executions set executed_at = null where intent = 'OPENING_BALANCE';
