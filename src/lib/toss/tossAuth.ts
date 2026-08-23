@@ -1,4 +1,18 @@
-export const TOSS_BASE_URL = "https://openapi.tossinvest.com";
+// TOSS_PROXY_BASE_URL이 설정되면(운영 환경) 오라클 리버스 프록시를 거치고,
+// 없으면(로컬 개발) Toss를 직접 호출한다 — 리버스 프록시 도입 배경은 ADR-0053 참고.
+export const TOSS_BASE_URL = process.env.TOSS_PROXY_BASE_URL || "https://openapi.tossinvest.com";
+
+const TOSS_PROXY_SHARED_SECRET = process.env.TOSS_PROXY_SHARED_SECRET;
+
+/** Toss 호출 3곳(OAuth 토큰, 시세, 환율)이 전부 이 헬퍼를 거치도록 해서
+ * 리버스 프록시 시크릿 헤더를 빠짐없이 붙인다. */
+export function tossFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (TOSS_PROXY_SHARED_SECRET) {
+    headers.set("X-Toss-Proxy-Secret", TOSS_PROXY_SHARED_SECRET);
+  }
+  return fetch(`${TOSS_BASE_URL}${path}`, { ...init, headers });
+}
 
 interface CachedToken {
   accessToken: string;
@@ -24,7 +38,7 @@ export async function getTossAccessToken(): Promise<string> {
     );
   }
 
-  const res = await fetch(`${TOSS_BASE_URL}/oauth2/token`, {
+  const res = await tossFetch("/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({

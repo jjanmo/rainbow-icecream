@@ -12,7 +12,7 @@ Investment portfolio management app. Update this file as new conventions/decisio
 Next.js 16 **Pages Router** (never App Router) · Supabase (Postgres + Auth) · Toss 증권 Open API · shadcn/ui "base-nova" (built on **Base UI**, not Radix — verify via no `radix-ui` deps) + Tailwind · TanStack Query for all server state · TypeScript · pnpm · Recharts · dnd-kit (drag-and-drop reordering of both groups and holdings, `/setup` only).
 
 ## File structure
-App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/lib`, `src/types`, `src/styles`, `src/proxy.ts`) — see ADR-0011. `public/`, config files (`next.config.ts`, `tsconfig.json`, `components.json`, etc.), `docs/`, and `supabase/` stay at the repo root per Next.js convention. Path references below (`lib/...`, `hooks/...`) are relative to `src/`.
+App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/lib`, `src/types`, `src/styles`, `src/proxy.ts`) — see ADR-0011. `public/`, config files (`next.config.ts`, `tsconfig.json`, `components.json`, etc.), `docs/`, and `supabase/` stay at the repo root per Next.js convention. Path references below (`lib/...`, `hooks/...`) are relative to `src/`. `infra/` holds non-app infrastructure config (currently `infra/toss-proxy/`, ADR-0053) — not part of the Next.js app, never imported from `src/`.
 
 ## Next.js 16 breaking changes
 - `middleware.ts` → `proxy.ts`, `export function middleware` → `export function proxy`.
@@ -55,6 +55,7 @@ App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/li
 - Every response is wrapped in a `{"result": ...}` envelope — undocumented, only discovered via direct `curl` against the real API. Zod schemas must unwrap `.result`.
 - No WebSocket support ("추후 지원 예정"). Poll at 1-minute intervals (`hooks/useLivePrices.ts`, `hooks/useExchangeRate.ts`) with adaptive backoff on rate-limit signals — never assume sub-minute polling is safe.
 - Fields like `timestamp`/`currency` can come back `null` (not just absent) for non-priceable symbols — Zod schemas need `.nullish()`, not `.optional()`.
+- Toss requires calls to come from a whitelisted fixed IP, which a Vercel-deployed serverless function can't guarantee — production routes all Toss calls through an Oracle Cloud reverse proxy VM (ADR-0053, runbook in `infra/toss-proxy/README.md`). All three outbound Toss calls (`tossAuth.ts`'s OAuth token fetch, `tossPriceProvider.ts`, `tossFxProvider.ts`) go through the `tossFetch` helper (`lib/toss/tossAuth.ts`), which reads `TOSS_PROXY_BASE_URL`/`TOSS_PROXY_SHARED_SECRET` env vars — never call Toss with a raw `fetch` from a new call site, or it'll bypass the proxy in production. Both env vars are optional and unset locally, so local dev keeps calling Toss directly, unchanged.
 
 ## UI conventions
 - **Never use `<input type="number">`** bound directly to a numeric state with per-keystroke `Number(e.target.value)` — causes a leading-zero bug. Use `type="text"` + `inputMode="decimal"` with local string draft state, parsed on blur. Reuse `useEditableField`/`useEditableNumberField` (`hooks/useEditableField.ts`) rather than reinventing this.

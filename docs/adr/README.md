@@ -58,6 +58,7 @@
 | [0050](./0050-opening-balance-new-holding-only.md) | 기초잔고는 "+ 새 종목" 전용, 새 종목은 매수 고정, 새 종목 흐름에 자산종류 추가 | Accepted |
 | [0051](./0051-journal-view-modes.md) | 매매일지 보기 모드 — 달력/기간/종목, 종목 보기는 매수·매도 근거 분리 표시 | Partially superseded by ADR-0052 |
 | [0052](./0052-merge-calendar-into-period-multiselect.md) | 매매일지 달력/기간 보기를 통합, 달력에 다중 날짜 선택 추가 | Accepted |
+| [0053](./0053-toss-fixed-ip-reverse-proxy.md) | Toss 고정 IP 요구 대응 — 오라클 클라우드 리버스 프록시 도입 | Accepted |
 
 ## 새 ADR 작성 형식
 
