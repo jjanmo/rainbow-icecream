@@ -14,15 +14,21 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ASSET_TYPE_LABELS, type AssetType, type NewHolding, type Region } from '@/types/domain';
 
-type Draft = Omit<NewHolding, 'groupId' | 'qty' | 'avgPrice'>;
+// 추가 모달은 최초 진입 시 아무것도 선택되지 않은 placeholder 상태로 열려야 하므로,
+// region/assetType도 (수정 모달과 달리) 빈 문자열을 잠깐 가질 수 있다 — 제출 시점엔
+// canSubmit이 이미 실값 채움을 확인했으므로 안전하게 단언한다.
+type Draft = Omit<NewHolding, 'groupId' | 'qty' | 'avgPrice' | 'region' | 'assetType'> & {
+  region: Region | '';
+  assetType: AssetType | '';
+};
 
 const EMPTY_DRAFT: Draft = {
   ticker: '',
   name: '',
   targetPctInGroup: 0,
-  account: '일반계좌',
-  region: '국내',
-  assetType: 'ETF',
+  account: '',
+  region: '',
+  assetType: '',
   sortOrder: 0,
 };
 
@@ -110,22 +116,24 @@ export function HoldingFormDialog({
   if (open !== prevOpen) {
     setPrevOpen(open);
     if (open) {
-      setGroupId(initialHolding?.groupId ?? defaultGroupId ?? groupOptions[0]?.id ?? '');
+      setGroupId(initialHolding?.groupId ?? defaultGroupId ?? '');
       setDraft(initialHolding ? toDraft(initialHolding) : EMPTY_DRAFT);
     }
   }
 
-  const tickerLabel = draft.region === '국내' ? '코드' : '티커';
+  const tickerLabel = draft.region === '' ? '코드/티커' : draft.region === '국내' ? '코드' : '티커';
 
   const canSubmit =
     !!groupId &&
+    !!draft.region &&
+    !!draft.assetType &&
     (isCash || (draft.ticker ?? '').trim().length > 0) &&
     draft.name.trim().length > 0 &&
     (draft.account ?? '').trim().length > 0;
 
   function handleSubmit() {
-    if (!canSubmit) return;
-    onSubmit({ ...draft, groupId, ticker: isCash ? null : draft.ticker });
+    if (!canSubmit || !draft.region || !draft.assetType) return;
+    onSubmit({ ...draft, groupId, region: draft.region, assetType: draft.assetType, ticker: isCash ? null : draft.ticker });
     onOpenChange(false);
   }
 
@@ -170,7 +178,7 @@ export function HoldingFormDialog({
                 onValueChange={(v) => v && setDraft((d) => ({ ...d, assetType: v as AssetType }))}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue placeholder="자산종류 선택" />
                 </SelectTrigger>
                 <SelectContent>
                   {ASSET_TYPE_ITEMS.map((item) => (
@@ -194,7 +202,7 @@ export function HoldingFormDialog({
                 onValueChange={(v) => v && setDraft((d) => ({ ...d, region: v as Region }))}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue placeholder="지역 선택" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="국내">국내</SelectItem>
