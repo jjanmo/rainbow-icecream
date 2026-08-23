@@ -1,7 +1,7 @@
 # ADR-0051: 매매일지 보기 모드 — 달력/기간/종목, 종목 보기는 매수·매도 근거를 분리해서 표시
 
 ## Status
-Accepted
+Partially superseded by ADR-0052 — 달력/기간이 하나로 합쳐졌다. 종목 모드와 그 근거 분리 표시는 그대로 유효하다.
 
 ## Context
 

@@ -65,8 +65,8 @@ function monthKey(year: number, month: number): string {
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
-type ViewMode = 'calendar' | 'period' | 'holding';
-const VIEW_MODE_LABELS: Record<ViewMode, string> = { calendar: '달력', period: '기간', holding: '종목' };
+type ViewMode = 'period' | 'holding';
+const VIEW_MODE_LABELS: Record<ViewMode, string> = { period: '기간', holding: '종목' };
 
 type PeriodPreset = 'thisMonth' | 'last3Months' | 'thisYear' | 'all' | 'custom';
 const PERIOD_PRESET_LABELS: Record<Exclude<PeriodPreset, 'custom'>, string> = {
@@ -108,6 +108,30 @@ function dateRangeOf(executions: Execution[]): DateRange | null {
   return { start: days.reduce((a, b) => (a < b ? a : b)), end: days.reduce((a, b) => (a > b ? a : b)) };
 }
 
+function isNextCalendarDay(a: string, b: string): boolean {
+  const [ay, am, ad] = a.split('-').map(Number);
+  const next = new Date(ay, am - 1, ad + 1);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}` === b;
+}
+
+/** 선택한 날짜들(정렬됨)을 연속 구간끼리 묶어 표시한다 — 17,19처럼 떨어진 날짜를
+ * "17~19"로 뭉뚱그리면 18일도 포함된 것처럼 보이는 오해가 생긴다. 연속된 날짜만
+ * "~"로 묶고, 나머지는 쉼표로 나열한다. */
+function formatSelectedDays(sortedDays: string[]): string {
+  const runs: string[][] = [];
+  for (const d of sortedDays) {
+    const lastRun = runs[runs.length - 1];
+    const prev = lastRun?.[lastRun.length - 1];
+    if (prev && isNextCalendarDay(prev, d)) {
+      lastRun.push(d);
+    } else {
+      runs.push([d]);
+    }
+  }
+  return runs.map((run) => (run.length === 1 ? run[0] : `${run[0]} ~ ${run[run.length - 1]}`)).join(', ');
+}
+
 /** 종목 콤보박스 표기 — ExecutionFormDialog와 같은 규칙(해외는 티커 먼저). */
 function holdingOptionLabel(h: Holding): string {
   return h.region === '해외' && h.ticker ? `${h.ticker}(${h.name})` : h.name;
@@ -147,13 +171,18 @@ export default function JournalPage() {
 
   const now = new Date();
   const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() });
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  // 프리셋/직접 지정(range)과 달력 낱개 클릭(days)은 서로 독립된 두 가지 필터
+  // 방법이다 — 하나를 쓰면 다른 하나는 꺼진다. 프리셋을 눌러도 달력에 개별 날짜가
+  // "선택됨"으로 칠해지지 않으므로, 그 상태에서 하루만 보고 싶으면 그 날짜 하나만
+  // 클릭하면 된다(다른 날짜들을 일일이 해제할 필요가 없다).
+  const [selectionMode, setSelectionMode] = useState<'range' | 'days'>('range');
+  const [selectedDays, setSelectedDays] = useState<Set<string>>(() => new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingExecution, setEditingExecution] = useState<Execution | null>(null);
   const [filter, setFilter] = useState<ExecutionsFilter>(ALL_EXECUTIONS_FILTER);
   const [deleteTarget, setDeleteTarget] = useState<Execution | null>(null);
   const [openingBalanceListOpen, setOpeningBalanceListOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>('calendar');
+  const [viewMode, setViewMode] = useState<ViewMode>('period');
   const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('thisMonth');
   const [periodRange, setPeriodRange] = useState<DateRange>(() => thisMonthRange());
   const [selectedHoldingId, setSelectedHoldingId] = useState('');
@@ -203,35 +232,6 @@ export default function JournalPage() {
   }, [executionsQuery.data, holdingById]);
 
   const monthPrefix = monthKey(cursor.year, cursor.month);
-  const monthExecutions = useMemo(
-    () =>
-      [...executionsByDay.entries()]
-        .filter(([day]) => day.startsWith(monthPrefix))
-        .flatMap(([, list]) => list),
-    [executionsByDay, monthPrefix],
-  );
-  // 해외 체결이 있는 달만 과거 환율을 조회한다 — 국내만 거래하는 달에는 불필요한 호출.
-  const hasForeignExecutionThisMonth = useMemo(
-    () => monthExecutions.some((e) => holdingById.get(e.holdingId)?.region === '해외'),
-    [monthExecutions, holdingById],
-  );
-  const monthStart = `${monthPrefix}-01`;
-  const monthEnd = `${monthPrefix}-${String(new Date(cursor.year, cursor.month + 1, 0).getDate()).padStart(2, '0')}`;
-  const fxQuery = useHistoricalFxRates(monthStart, monthEnd, hasForeignExecutionThisMonth);
-  // 체결일 기준 USD→KRW 환율 조회 — 실현손익은 여전히 거래 통화 기준이 원본이고
-  // (ADR-0038), 이건 합계 표시에만 쓰는 참고용 환산이다.
-  const rateForExecution = useMemo(() => {
-    const rates = fxQuery.data?.rates;
-    if (!rates) return undefined;
-    return (e: Execution) => (e.executedAt ? rates[localDayKey(e.executedAt)] : undefined);
-  }, [fxQuery.data]);
-
-  // monthExecutions는 executionsByDay에서 파생되고, 그쪽이 이미 기초잔고를 뺐으므로
-  // 여기서 다시 거를 필요가 없다.
-  const monthSummary = useMemo(
-    () => summarizeExecutions(monthExecutions, holdingById, closedLotByExecutionId, rateForExecution),
-    [monthExecutions, holdingById, closedLotByExecutionId, rateForExecution],
-  );
 
   // 달력 격자: 1일이 시작되는 요일만큼 앞을 비운다.
   const cells = useMemo(() => {
@@ -249,31 +249,30 @@ export default function JournalPage() {
   const isError = groupsQuery.isError || holdingsQuery.isError || executionsQuery.isError || tradeNotesQuery.isError;
   const error = groupsQuery.error ?? holdingsQuery.error ?? executionsQuery.error ?? tradeNotesQuery.error;
 
-  const dayList = useMemo(
-    () => (selectedDay ? (executionsByDay.get(selectedDay) ?? []) : []),
-    [selectedDay, executionsByDay],
-  );
-  const daySummary = useMemo(
-    () => summarizeExecutions(dayList, holdingById, closedLotByExecutionId, rateForExecution),
-    [dayList, holdingById, closedLotByExecutionId, rateForExecution],
-  );
-
-  // 기간 모드 — 달력의 월 단위 대신 임의 구간(프리셋 또는 직접 지정)으로 스코핑한다.
-  // 기초잔고는 날짜가 없어 어느 구간에도 속하지 않으므로 자연히 빠진다.
-  const periodExecutions = useMemo(
-    () =>
-      (executionsQuery.data ?? []).filter((e) => {
-        if (!e.executedAt) return false;
-        const day = localDayKey(e.executedAt);
-        return day >= periodRange.start && day <= periodRange.end;
-      }),
-    [executionsQuery.data, periodRange],
-  );
+  // range 모드는 [start,end] 구간으로, days 모드는 낱개로 고른 날짜 집합으로 거른다
+  // — 서로 배타적이라 지금 켜진 모드 하나만 본다.
+  const periodExecutions = useMemo(() => {
+    if (selectionMode === 'days') {
+      return (executionsQuery.data ?? []).filter((e) => e.executedAt && selectedDays.has(localDayKey(e.executedAt)));
+    }
+    return (executionsQuery.data ?? []).filter((e) => {
+      if (!e.executedAt) return false;
+      const day = localDayKey(e.executedAt);
+      return day >= periodRange.start && day <= periodRange.end;
+    });
+  }, [selectionMode, selectedDays, executionsQuery.data, periodRange]);
+  const periodFxRange = useMemo(() => dateRangeOf(periodExecutions), [periodExecutions]);
   const periodHasForeign = useMemo(
     () => periodExecutions.some((e) => holdingById.get(e.holdingId)?.region === '해외'),
     [periodExecutions, holdingById],
   );
-  const periodFxQuery = useHistoricalFxRates(periodRange.start, periodRange.end, periodHasForeign);
+  const periodFxQuery = useHistoricalFxRates(
+    periodFxRange?.start ?? '',
+    periodFxRange?.end ?? '',
+    !!periodFxRange && periodHasForeign,
+  );
+  // 체결일 기준 USD→KRW 환율 조회 — 실현손익은 여전히 거래 통화 기준이 원본이고
+  // (ADR-0038), 이건 합계 표시에만 쓰는 참고용 환산이다.
   const periodRateForExecution = useMemo(() => {
     const rates = periodFxQuery.data?.rates;
     if (!rates) return undefined;
@@ -284,16 +283,45 @@ export default function JournalPage() {
     [periodExecutions, holdingById, closedLotByExecutionId, periodRateForExecution],
   );
 
+  /** 프리셋/직접 지정 공통 — range 모드로 전환하고 달력 커서를 그 구간의 마지막
+   * 달로 옮긴다. days 모드에서 골라둔 낱개 날짜는 건드리지 않는다(다시 달력을
+   * 클릭하면 그대로 이어서 쓸 수 있다) — 다만 지금은 range 모드가 우선이라
+   * 화면엔 반영되지 않는다. */
+  function applyRange(range: DateRange) {
+    setPeriodRange(range);
+    setSelectionMode('range');
+    const [endYear, endMonth] = range.end.split('-').map(Number);
+    setCursor({ year: endYear, month: endMonth - 1 });
+  }
+
   function applyPeriodPreset(preset: PeriodPreset) {
     setPeriodPreset(preset);
     if (preset === 'custom') return; // 사용자가 직접 입력할 때까지 대기
-    if (preset === 'all') {
-      const range = dateRangeOf(executionsQuery.data ?? []);
-      if (range) setPeriodRange(range);
-      return;
-    }
-    setPeriodRange(presetRange(preset));
+    const range = preset === 'all' ? dateRangeOf(executionsQuery.data ?? []) : presetRange(preset);
+    if (range) applyRange(range);
   }
+
+  /** 달력 날짜를 하나씩 토글 — days 모드로 전환한다. 프리셋과는 독립적이라, 방금
+   * 프리셋으로 채운 화면이었어도 이 클릭 한 번으로 그 프리셋 결과는 뒤로 밀리고
+   * 클릭한 날짜(들)만 보이게 된다 — 나머지를 일일이 해제할 필요가 없다. */
+  function toggleDay(day: string) {
+    setSelectionMode('days');
+    setSelectedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(day)) next.delete(day);
+      else next.add(day);
+      return next;
+    });
+  }
+
+  const periodLabel =
+    selectionMode === 'days'
+      ? selectedDays.size === 0
+        ? '선택한 날짜 없음'
+        : formatSelectedDays([...selectedDays].sort())
+      : periodRange.start === periodRange.end
+        ? periodRange.start
+        : `${periodRange.start} ~ ${periodRange.end}`;
 
   // 종목 모드 — 그 종목의 전체 체결 이력(기초잔고 포함, 날짜 무관)을 한 번에 본다.
   const holdingExecutions = useMemo(
@@ -334,26 +362,25 @@ export default function JournalPage() {
     [holdingExecutions, tradeNotes],
   );
 
-  // 우측 패널에 실제로 노출되는 범위 — 달력/기간 모드에서 고른 구간 안에서만 필터가 동작한다.
-  // 종목 모드는 별도 레이아웃(holdingExecutions)을 쓰므로 여기 관여하지 않는다.
-  const scopedExecutions = viewMode === 'period' ? periodExecutions : selectedDay ? dayList : monthExecutions;
+  // 우측 패널에 실제로 노출되는 범위 — range/days 어느 모드든 periodExecutions
+  // 안에서만 필터가 동작한다. 종목 모드는 별도 레이아웃(holdingExecutions)을
+  // 쓰므로 여기 관여하지 않는다.
   const filteredExecutions = useMemo(
-    () => scopedExecutions.filter((e) => matchesExecutionsFilter(e, filter, holdingById.get(e.holdingId))),
-    [scopedExecutions, filter, holdingById],
+    () => periodExecutions.filter((e) => matchesExecutionsFilter(e, filter, holdingById.get(e.holdingId))),
+    [periodExecutions, filter, holdingById],
   );
   // 종목 필터 선택지도 지금 보고 있는 기간에 실제로 등장하는 종목으로만 좁힌다.
   const scopedHoldingOptions = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const e of scopedExecutions) {
+    for (const e of periodExecutions) {
       if (seen.has(e.holdingId)) continue;
       const h = holdingById.get(e.holdingId);
       if (h) seen.set(e.holdingId, h.ticker ? `${h.ticker} (${h.name})` : h.name);
     }
     return [...seen.entries()].map(([id, label]) => ({ id, label }));
-  }, [scopedExecutions, holdingById]);
+  }, [periodExecutions, holdingById]);
 
   function shiftMonth(delta: number) {
-    setSelectedDay(null);
     setCursor((c) => {
       const d = new Date(c.year, c.month + delta, 1);
       return { year: d.getFullYear(), month: d.getMonth() };
@@ -363,7 +390,6 @@ export default function JournalPage() {
   function goToToday() {
     const t = new Date();
     setCursor({ year: t.getFullYear(), month: t.getMonth() });
-    setSelectedDay(localDayKey(t.toISOString()));
   }
 
   function openAddDialog() {
@@ -569,15 +595,26 @@ export default function JournalPage() {
             </>
           )}
         </div>
-      ) : viewMode === 'period' ? (
+      ) : (
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
           <div className="rounded-lg border border-border bg-card p-4 sm:p-5 lg:w-90 lg:shrink-0">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-[15px] font-semibold">
-                {periodRange.start} ~ {periodRange.end}
+                {cursor.year}년 {cursor.month + 1}월
               </span>
-              <span className="text-xs text-muted-foreground">체결 {periodExecutions.length}건</span>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="icon-xs" onClick={() => shiftMonth(-1)} title="이전 달">
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button variant="ghost" size="xs" onClick={goToToday} title="오늘로 이동">
+                  오늘
+                </Button>
+                <Button variant="ghost" size="icon-xs" onClick={() => shiftMonth(1)} title="다음 달">
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
             </div>
+
             <div className="mb-3 flex flex-wrap gap-1.5">
               {(Object.keys(PERIOD_PRESET_LABELS) as Exclude<PeriodPreset, 'custom'>[]).map((preset) => (
                 <button
@@ -586,7 +623,7 @@ export default function JournalPage() {
                   onClick={() => applyPeriodPreset(preset)}
                   className={cn(
                     'rounded-full border px-2.5 py-1 text-xs transition-colors',
-                    periodPreset === preset
+                    selectionMode === 'range' && periodPreset === preset
                       ? 'border-primary bg-accent text-accent-foreground'
                       : 'border-border text-muted-foreground hover:text-foreground',
                   )}
@@ -601,7 +638,7 @@ export default function JournalPage() {
                 value={periodRange.start}
                 onChange={(e) => {
                   setPeriodPreset('custom');
-                  setPeriodRange((r) => ({ ...r, start: e.target.value }));
+                  applyRange({ ...periodRange, start: e.target.value });
                 }}
                 className="font-mono text-xs"
               />
@@ -611,62 +648,16 @@ export default function JournalPage() {
                 value={periodRange.end}
                 onChange={(e) => {
                   setPeriodPreset('custom');
-                  setPeriodRange((r) => ({ ...r, end: e.target.value }));
+                  applyRange({ ...periodRange, end: e.target.value });
                 }}
                 className="font-mono text-xs"
               />
             </div>
-            {hasActivity(periodSummary) && (
-              <TradeSummaryStrip summary={periodSummary} fxLoading={periodFxQuery.isLoading} />
-            )}
-          </div>
 
-          <div className="flex min-w-0 flex-1 flex-col rounded-lg border border-border bg-card p-4 sm:p-5 lg:max-h-[calc(100vh-220px)]">
-            <div className="mb-3 shrink-0 text-[13px] font-semibold">선택한 기간의 체결</div>
-            {scopedExecutions.length > 0 && (
-              <div className="mb-3 shrink-0">
-                <ExecutionsFilterBar filter={filter} onChange={setFilter} holdingOptions={scopedHoldingOptions} />
-              </div>
-            )}
-            <div className="scrollbar-hidden min-h-0 overflow-y-auto">
-              <ExecutionsTable
-                executions={filteredExecutions}
-                holdingById={holdingById}
-                closedLotByExecutionId={closedLotByExecutionId}
-                rateForExecution={periodRateForExecution}
-                onEdit={openEditDialog}
-                onDelete={setDeleteTarget}
-              />
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-          <div className="rounded-lg border border-border bg-card p-4 sm:p-5 lg:w-90 lg:shrink-0">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-baseline gap-2">
-                <span className="text-[15px] font-semibold">
-                  {cursor.year}년 {cursor.month + 1}월
-                </span>
-                <span className="text-xs text-muted-foreground">체결 {monthExecutions.length}건</span>
-              </div>
-              <div className="flex gap-1">
-                <Button variant="ghost" size="icon-xs" onClick={() => shiftMonth(-1)} title="이전 달">
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <Button variant="ghost" size="xs" onClick={goToToday} title="오늘로 이동">
-                  오늘
-                </Button>
-                <Button variant="ghost" size="icon-xs" onClick={() => shiftMonth(1)} title="다음 달">
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
-            </div>
-
-            {hasActivity(monthSummary) && (
-              <TradeSummaryStrip summary={monthSummary} className="mb-3" fxLoading={fxQuery.isLoading} />
-            )}
-
+            {/* 위 프리셋/직접 지정과는 독립적이다 — 날짜를 하나라도 클릭하면 그
+                즉시 프리셋은 뒤로 밀리고(활성 표시가 꺼지고) 클릭한 날짜(들)만
+                보이게 된다. 여러 날짜를 (연속이 아니어도, 여러 달에 걸쳐도) 계속
+                눌러서 모아 볼 수 있다. */}
             <div className="grid grid-cols-7 gap-1 text-center">
               {WEEKDAYS.map((w) => (
                 <div key={w} className="pb-1 text-[11px] text-muted-foreground">
@@ -677,12 +668,12 @@ export default function JournalPage() {
                 if (day === null) return <div key={`lead-${i}`} />;
                 const key = `${monthPrefix}-${String(day).padStart(2, '0')}`;
                 const list = executionsByDay.get(key) ?? [];
-                const isSelected = selectedDay === key;
+                const isSelected = selectionMode === 'days' && selectedDays.has(key);
                 return (
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setSelectedDay(isSelected ? null : key)}
+                    onClick={() => toggleDay(key)}
                     className={`flex aspect-square flex-col items-center justify-center rounded-md border text-xs transition-colors ${
                       isSelected
                         ? 'border-primary bg-accent text-accent-foreground'
@@ -697,6 +688,8 @@ export default function JournalPage() {
                 );
               })}
             </div>
+
+            {hasActivity(periodSummary) && <TradeSummaryStrip summary={periodSummary} className="mt-3" fxLoading={periodFxQuery.isLoading} />}
           </div>
 
           {/* lg 이상에서는 달력과 나란히 두고 목록만 내부 스크롤한다 — 목록이 길어져도
@@ -705,13 +698,10 @@ export default function JournalPage() {
           <div className="flex min-w-0 flex-1 flex-col rounded-lg border border-border bg-card p-4 sm:p-5 lg:max-h-[calc(100vh-220px)]">
             <div className="mb-3 shrink-0">
               <div className="text-[13px] font-semibold">
-                {selectedDay ? `${selectedDay} 체결` : `${cursor.month + 1}월 전체 체결`}
+                {periodLabel} 체결 <span className="font-normal text-muted-foreground">({periodExecutions.length}건)</span>
               </div>
-              {selectedDay && hasActivity(daySummary) && (
-                <TradeSummaryStrip summary={daySummary} className="mt-2" fxLoading={fxQuery.isLoading} />
-              )}
             </div>
-            {scopedExecutions.length > 0 && (
+            {periodExecutions.length > 0 && (
               <div className="mb-3 shrink-0">
                 <ExecutionsFilterBar filter={filter} onChange={setFilter} holdingOptions={scopedHoldingOptions} />
               </div>
@@ -721,7 +711,7 @@ export default function JournalPage() {
                 executions={filteredExecutions}
                 holdingById={holdingById}
                 closedLotByExecutionId={closedLotByExecutionId}
-                rateForExecution={rateForExecution}
+                rateForExecution={periodRateForExecution}
                 onEdit={openEditDialog}
                 onDelete={setDeleteTarget}
               />
