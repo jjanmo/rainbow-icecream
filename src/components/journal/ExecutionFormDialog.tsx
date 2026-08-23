@@ -25,7 +25,6 @@ import type { Execution, NewExecution, NewTradeNote, Side, TradeNote } from '@/t
 export type ExecutionNoteDraft = Omit<NewTradeNote, 'executionId'>;
 
 const ACCOUNT_TYPES = ['일반계좌', 'ISA', '연금저축', 'IRP', 'CMA', '파킹통장', '예적금', '기타'];
-const ALL_ACCOUNTS = 'all';
 
 /** `datetime-local` 값(로컬 시간, 초 없음) ↔ ISO8601(UTC) 변환. */
 function toLocalInputValue(iso: string): string {
@@ -140,7 +139,7 @@ export function ExecutionFormDialog({
 }) {
   const [side, setSide] = useState<Side>('BUY');
   const [holdingId, setHoldingId] = useState('');
-  const [accountFilter, setAccountFilter] = useState(ALL_ACCOUNTS);
+  const [accountFilter, setAccountFilter] = useState('');
   const [isNewHolding, setIsNewHolding] = useState(false);
   const [isCash, setIsCash] = useState(false);
   const [isOpeningBalance, setIsOpeningBalance] = useState(false);
@@ -173,7 +172,7 @@ export function ExecutionFormDialog({
       const holding = holdings.find((h) => h.id === editingExecution.holdingId);
       setSide(editingExecution.side);
       setHoldingId(editingExecution.holdingId);
-      setAccountFilter(holding?.account ?? ALL_ACCOUNTS);
+      setAccountFilter(holding?.account ?? '');
       setIsNewHolding(false);
       setIsCash(false);
       setIsOpeningBalance(editingExecution.intent === 'OPENING_BALANCE');
@@ -183,8 +182,8 @@ export function ExecutionFormDialog({
       setNoteBody(existingNote?.body ?? '');
     } else if (open) {
       setSide('BUY');
-      setHoldingId(holdings[0]?.id ?? '');
-      setAccountFilter(ALL_ACCOUNTS);
+      setHoldingId('');
+      setAccountFilter('');
       setIsNewHolding(holdings.length === 0);
       setIsCash(false);
       setIsOpeningBalance(false);
@@ -232,10 +231,12 @@ export function ExecutionFormDialog({
       ),
     [holdings],
   );
+  // 계좌 필터를 아직 안 골랐으면(빈 문자열, placeholder 상태) 전체 종목을 보여준다 —
+  // "전체" 옵션을 없앤 대신, 선택 전 상태 자체가 그 역할을 한다.
   const holdingComboItems = useMemo(
     () =>
       holdings
-        .filter((h) => accountFilter === ALL_ACCOUNTS || h.account === accountFilter)
+        .filter((h) => accountFilter === '' || h.account === accountFilter)
         .map((h) => ({ value: h.id, label: holdingOptionLabel(h) })),
     [holdings, accountFilter],
   );
@@ -251,7 +252,7 @@ export function ExecutionFormDialog({
   function handleAccountFilterChange(account: string) {
     setAccountFilter(account);
     // 지금 고른 종목이 새 계좌 필터에 안 맞으면 선택을 비운다.
-    if (account !== ALL_ACCOUNTS && selected && selected.account !== account) {
+    if (selected && selected.account !== account) {
       setHoldingId('');
     }
   }
@@ -524,19 +525,15 @@ export function ExecutionFormDialog({
             ) : (
               <div className="flex flex-col gap-1.5">
                 <Select
-                  items={[
-                    { label: '전체', value: ALL_ACCOUNTS },
-                    ...accountOptions.map((a) => ({ label: a, value: a })),
-                  ]}
+                  items={accountOptions.map((a) => ({ label: a, value: a }))}
                   value={accountFilter}
                   onValueChange={(v) => v && handleAccountFilterChange(v)}
                   disabled={!!editingExecution}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue />
+                    <SelectValue placeholder="계좌 선택" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={ALL_ACCOUNTS}>전체 계좌</SelectItem>
                     {accountOptions.map((a) => (
                       <SelectItem key={a} value={a}>
                         {a}
