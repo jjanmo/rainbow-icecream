@@ -10,14 +10,20 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { HoldingFormDialog } from '@/components/holdings/HoldingFormDialog';
+import { HoldingsHeatmap } from '@/components/holdings/HoldingsHeatmap';
 import { HoldingsTable } from '@/components/holdings/HoldingsTable';
 import { ALL_HOLDINGS_FILTER, HoldingsFilterBar, type HoldingsFilter } from '@/components/holdings/HoldingsFilterBar';
 import { DataErrorNotice } from '@/components/shared/DataErrorNotice';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useDailyReturns } from '@/hooks/useDailyReturns';
 import { useAddHolding, useDeleteHolding, useUpdateHolding } from '@/hooks/useHoldings';
 import { useRebalanceData } from '@/hooks/useRebalanceData';
 import type { Holding } from '@/types/domain';
+import { cn } from '@/lib/utils';
+
+type HoldingsView = 'table' | 'heatmap';
+const VIEW_LABELS: Record<HoldingsView, string> = { table: '목록', heatmap: '히트맵' };
 
 export default function HoldingsPage() {
   const { data, usdKrwRate, isLoading, isError, error } = useRebalanceData();
@@ -26,6 +32,7 @@ export default function HoldingsPage() {
   const deleteHolding = useDeleteHolding();
 
   const [filter, setFilter] = useState<HoldingsFilter>(ALL_HOLDINGS_FILTER);
+  const [view, setView] = useState<HoldingsView>('table');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Holding | null>(null);
@@ -39,6 +46,12 @@ export default function HoldingsPage() {
         (filter.region === 'all' || h.region === filter.region),
     );
   }, [data, filter]);
+
+  const heatmapTickers = useMemo(
+    () => filteredHoldings.map((h) => h.ticker).filter((t): t is string => t !== null),
+    [filteredHoldings],
+  );
+  const dailyReturnsQuery = useDailyReturns(heatmapTickers, view === 'heatmap');
 
   const groupOptions = useMemo(() => data?.groups.map((g) => ({ id: g.id, name: g.name })) ?? [], [data]);
 
@@ -92,15 +105,42 @@ export default function HoldingsPage() {
             />
             <span className="shrink-0 text-xs text-muted-foreground">총 {filteredHoldings.length}개 종목</span>
           </div>
-          <HoldingsTable
-            rows={filteredHoldings}
-            usdKrwRate={usdKrwRate}
-            onEdit={openEditModal}
-            onDelete={(id) => {
-              const h = data.holdings.find((holding) => holding.id === id);
-              if (h) setDeleteTarget(h);
-            }}
-          />
+
+          <div className="mb-3.5 flex gap-1.5">
+            {(Object.keys(VIEW_LABELS) as HoldingsView[]).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className={cn(
+                  'rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors',
+                  view === v
+                    ? 'border-primary bg-accent text-accent-foreground'
+                    : 'border-border text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {VIEW_LABELS[v]}
+              </button>
+            ))}
+          </div>
+
+          {view === 'table' ? (
+            <HoldingsTable
+              rows={filteredHoldings}
+              usdKrwRate={usdKrwRate}
+              onEdit={openEditModal}
+              onDelete={(id) => {
+                const h = data.holdings.find((holding) => holding.id === id);
+                if (h) setDeleteTarget(h);
+              }}
+            />
+          ) : (
+            <HoldingsHeatmap
+              holdings={filteredHoldings}
+              dailyChangeByTicker={dailyReturnsQuery.data ?? {}}
+              isLoadingDailyChanges={dailyReturnsQuery.isLoading}
+            />
+          )}
         </>
       )}
 
