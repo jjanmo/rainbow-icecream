@@ -5,7 +5,7 @@ import {
   softDeleteExecution,
   updateExecution,
 } from "@/lib/api/executions";
-import { updateHolding } from "@/lib/api/holdings";
+import { deleteHolding, updateHolding } from "@/lib/api/holdings";
 import type { Holding } from "@/types/domain";
 import type { Execution, NewExecution } from "@/types/journal";
 import { replayHolding, type ReplayContext, type ReplayResult } from "./replay";
@@ -41,6 +41,15 @@ export async function replayAndPersistHolding(
 
   if (result.qty !== holding.qty || result.avgPrice !== holding.avgPrice) {
     await updateHolding(supabase, holding.id, { qty: result.qty, avgPrice: result.avgPrice });
+  }
+
+  // 전량 매도로 수량이 0이 되면 보유종목에서도 자동으로 정리한다. 재매수는
+  // 항상 "+ 새 종목"으로 새로 입력받는다 — 자산군이 바뀔 수 있어 이전 종목의
+  // 설정을 이어받지 않는 게 맞다고 판단했다(사용자 결정). 그래서 여기서 되살리는
+  // 로직은 두지 않는다 — deleted_at을 지우는 건 여전히 DB에서 직접 처리해야
+  // 한다(ADR-0045). 이미 삭제된 상태면 건드리지 않는다.
+  if (result.qty === 0 && !holding.deletedAt) {
+    await deleteHolding(supabase, holding.id);
   }
   return result;
 }

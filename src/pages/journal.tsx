@@ -40,7 +40,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useAddExecution, useDeleteExecution, useExecutions, useUpdateExecution } from '@/hooks/useExecutions';
 import { useGroups } from '@/hooks/useGroups';
-import { useAddHolding, useHoldings } from '@/hooks/useHoldings';
+import { useAddHolding, useAllHoldings, useHoldings } from '@/hooks/useHoldings';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { useHistoricalFxRates } from '@/hooks/useHistoricalFxRates';
 import { useDeleteTradeNote, useTradeNotes, useUpsertTradeNote } from '@/hooks/useTradeNotes';
@@ -137,6 +137,20 @@ function holdingOptionLabel(h: Holding): string {
   return h.region === '해외' && h.ticker ? `${h.ticker}(${h.name})` : h.name;
 }
 
+/** 종목 모드의 "같은 종목" 판단 기준 — 티커+지역(계좌는 무시). 전량 매도로
+ * 삭제된 뒤 다시 산 종목은 holding row가 여러 개로 나뉘어 있어도, 이 키가
+ * 같으면 하나의 검색 결과·하나의 이력으로 합쳐 보여준다. 현금성 자산(ticker
+ * null)은 이름으로 대신 구분한다. */
+function holdingIdentityKey(h: Holding): string {
+  return h.ticker ? `T:${h.ticker}|${h.region}` : `N:${h.name}|${h.region}`;
+}
+
+/** 그룹 안에서 콤보박스에 보여줄 대표 하나를 고른다 — 활성 상태를 우선하고
+ * (지금 쓰는 정확한 이름을 보여주기 위해), 전부 삭제된 상태면 가장 최근 것. */
+function pickRepresentativeHolding(group: Holding[]): Holding {
+  return group.find((h) => !h.deletedAt) ?? [...group].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+}
+
 interface HoldingComboItem {
   value: string;
   label: string;
@@ -160,6 +174,7 @@ function notesForSide(
 export default function JournalPage() {
   const groupsQuery = useGroups();
   const holdingsQuery = useHoldings();
+  const allHoldingsQuery = useAllHoldings();
   const executionsQuery = useExecutions();
   const tradeNotesQuery = useTradeNotes();
   const addExecution = useAddExecution();
@@ -187,9 +202,35 @@ export default function JournalPage() {
   const [periodRange, setPeriodRange] = useState<DateRange>(() => thisMonthRange());
   const [selectedHoldingId, setSelectedHoldingId] = useState('');
 
+  // holdings(활성)는 체결 입력 시 "보유종목에서 고르기"(ExecutionFormDialog)
+  // 전용 — 지금 실제로 갖고 있는 것만 골라야 하므로 삭제된 종목을 섞지 않는다.
+  // allHoldings(삭제분 포함)는 그 외 매매일지 전체(요약·필터·체결 테이블·종목
+  // 모드)가 쓴다 — 예전에 전량 매도해 삭제된 종목의 매매 기록도 여기서 조회해야
+  // 하기 때문이다.
   const holdings = useMemo(() => holdingsQuery.data ?? [], [holdingsQuery.data]);
-  const holdingById = useMemo(() => new Map(holdings.map((h) => [h.id, h])), [holdings]);
+  const allHoldings = useMemo(() => allHoldingsQuery.data ?? [], [allHoldingsQuery.data]);
+  const holdingById = useMemo(() => new Map(allHoldings.map((h) => [h.id, h])), [allHoldings]);
   const tradeNotes = useMemo(() => tradeNotesQuery.data ?? [], [tradeNotesQuery.data]);
+
+  // 티커+지역이 같은 holding row들을 하나의 종목으로 묶는다 — 삭제 후 재매수로
+  // row가 여러 개 생겨도 종목 모드에서는 검색 결과 하나, 이력도 하나로 합쳐 보여야
+  // 한다. 그룹 대표는 활성 row를 우선하고(가장 최근 이름을 보여주기 위해), 전부
+  // 삭제된 상태면 가장 최근에 만들어진 row를 쓴다.
+  const holdingGroupsByKey = useMemo(() => {
+    const map = new Map<string, Holding[]>();
+    for (const h of allHoldings) {
+      const key = holdingIdentityKey(h);
+      const arr = map.get(key) ?? [];
+      arr.push(h);
+      map.set(key, arr);
+    }
+    return map;
+  }, [allHoldings]);
+  const groupKeyByHoldingId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const h of allHoldings) map.set(h.id, holdingIdentityKey(h));
+    return map;
+  }, [allHoldings]);
 
   // 기초잔고는 날짜가 없어(ADR-0048) 캘린더에 실을 수 없다 — 별도 목록(아래
   // openingBalanceExecutions)에서만 보여준다. 실제 매매가 아니므로 애초에
@@ -245,9 +286,19 @@ export default function JournalPage() {
   }, [cursor]);
 
   const isLoading =
-    groupsQuery.isLoading || holdingsQuery.isLoading || executionsQuery.isLoading || tradeNotesQuery.isLoading;
-  const isError = groupsQuery.isError || holdingsQuery.isError || executionsQuery.isError || tradeNotesQuery.isError;
-  const error = groupsQuery.error ?? holdingsQuery.error ?? executionsQuery.error ?? tradeNotesQuery.error;
+    groupsQuery.isLoading ||
+    holdingsQuery.isLoading ||
+    allHoldingsQuery.isLoading ||
+    executionsQuery.isLoading ||
+    tradeNotesQuery.isLoading;
+  const isError =
+    groupsQuery.isError ||
+    holdingsQuery.isError ||
+    allHoldingsQuery.isError ||
+    executionsQuery.isError ||
+    tradeNotesQuery.isError;
+  const error =
+    groupsQuery.error ?? holdingsQuery.error ?? allHoldingsQuery.error ?? executionsQuery.error ?? tradeNotesQuery.error;
 
   // range 모드는 [start,end] 구간으로, days 모드는 낱개로 고른 날짜 집합으로 거른다
   // — 서로 배타적이라 지금 켜진 모드 하나만 본다.
@@ -323,10 +374,17 @@ export default function JournalPage() {
         ? periodRange.start
         : `${periodRange.start} ~ ${periodRange.end}`;
 
-  // 종목 모드 — 그 종목의 전체 체결 이력(기초잔고 포함, 날짜 무관)을 한 번에 본다.
+  // 종목 모드 — 선택한 종목과 같은 정체성(티커+지역)을 가진 holding_id 전부의
+  // 체결을 합쳐서, 그 종목의 전체 이력(기초잔고 포함, 날짜 무관, 삭제된 뒤
+  // 재매수한 분까지)을 한 번에 본다.
+  const matchingHoldingIds = useMemo(() => {
+    const key = groupKeyByHoldingId.get(selectedHoldingId);
+    if (!key) return selectedHoldingId ? new Set([selectedHoldingId]) : new Set<string>();
+    return new Set((holdingGroupsByKey.get(key) ?? []).map((h) => h.id));
+  }, [selectedHoldingId, groupKeyByHoldingId, holdingGroupsByKey]);
   const holdingExecutions = useMemo(
-    () => (executionsQuery.data ?? []).filter((e) => e.holdingId === selectedHoldingId),
-    [executionsQuery.data, selectedHoldingId],
+    () => (executionsQuery.data ?? []).filter((e) => matchingHoldingIds.has(e.holdingId)),
+    [executionsQuery.data, matchingHoldingIds],
   );
   const holdingFxRange = useMemo(() => dateRangeOf(holdingExecutions), [holdingExecutions]);
   const holdingHasForeign = holdingById.get(selectedHoldingId)?.region === '해외';
@@ -350,8 +408,12 @@ export default function JournalPage() {
     [holdingExecutions, holdingById, closedLotByExecutionId, holdingRateForExecution],
   );
   const holdingComboItems = useMemo(
-    () => holdings.map((h): HoldingComboItem => ({ value: h.id, label: holdingOptionLabel(h) })),
-    [holdings],
+    () =>
+      [...holdingGroupsByKey.values()].map((group): HoldingComboItem => {
+        const representative = pickRepresentativeHolding(group);
+        return { value: representative.id, label: holdingOptionLabel(representative) };
+      }),
+    [holdingGroupsByKey],
   );
   const holdingBuyNotes = useMemo(
     () => notesForSide(holdingExecutions, tradeNotes, 'BUY'),

@@ -392,7 +392,7 @@ export function ExecutionFormDialog({
                   onClick={toggleNewHolding}
                   className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
                 >
-                  {isNewHolding ? '기존 종목에서 고르기' : '+ 새 종목'}
+                  {isNewHolding ? '보유종목에서 고르기' : '+ 새 종목'}
                 </button>
               )}
             </div>
