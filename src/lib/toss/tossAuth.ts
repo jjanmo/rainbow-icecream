@@ -60,6 +60,29 @@ export async function getTossAccessToken(): Promise<string> {
   return cachedToken.accessToken;
 }
 
+/** 인증이 필요한 Toss 호출(시세/환율/캔들) 전용 헬퍼. Toss는 같은 client_id로
+ * 새 토큰을 발급하는 즉시 이전 토큰을 서버 쪽에서 무효화한다 — 실측으로 확인
+ * (2026-08-25, 토큰 A 발급 → 정상 사용 → 토큰 B 발급 → 토큰 A 재사용 시 즉시
+ * invalid-token 401). Vercel 서버리스는 컨테이너마다 독립된 in-memory
+ * cachedToken을 갖기 때문에, 다른 컨테이너가 토큰을 새로 받는 순간 이 컨테이너가
+ * "아직 유효하다"고 믿는 캐시가 조용히 죽는다. 401을 받으면 캐시를 버리고
+ * 새 토큰으로 한 번 재시도해서, 그 요청 자체는 항상 성공하도록 만든다. */
+export async function tossAuthedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = await getTossAccessToken();
+  const res = await tossFetch(path, {
+    ...init,
+    headers: { ...init.headers, Authorization: `Bearer ${token}` },
+  });
+  if (res.status !== 401) return res;
+
+  cachedToken = null;
+  const freshToken = await getTossAccessToken();
+  return tossFetch(path, {
+    ...init,
+    headers: { ...init.headers, Authorization: `Bearer ${freshToken}` },
+  });
+}
+
 /**
  * Toss doesn't publish exact rate limits — only "check the response headers."
  * Defensively probes a few common header name spellings; returns undefined

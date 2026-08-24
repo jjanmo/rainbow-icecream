@@ -1,5 +1,5 @@
 import { tossCandlePageResponseSchema } from "./schema";
-import { getTossAccessToken, tossFetch } from "./tossAuth";
+import { tossAuthedFetch } from "./tossAuth";
 
 export type DailyChangeLookup = { changePct: number } | { error: string };
 
@@ -22,11 +22,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchOne(symbol: string, token: string): Promise<DailyChangeLookup> {
+async function fetchOne(symbol: string): Promise<DailyChangeLookup> {
   for (let attempt = 0; attempt <= MAX_RETRIES_ON_429; attempt++) {
     try {
       const path = `/api/v1/candles?symbol=${encodeURIComponent(symbol)}&interval=1d&count=2`;
-      const res = await tossFetch(path, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await tossAuthedFetch(path);
       if (res.status === 429 && attempt < MAX_RETRIES_ON_429) {
         await sleep(RETRY_BACKOFF_MS * (attempt + 1));
         continue;
@@ -61,12 +61,10 @@ export const tossCandleProvider = {
     const changes: Record<string, DailyChangeLookup> = {};
     if (symbols.length === 0) return { changes };
 
-    const token = await getTossAccessToken();
-
     for (let i = 0; i < symbols.length; i += REQUESTS_PER_WINDOW) {
       const batch = symbols.slice(i, i + REQUESTS_PER_WINDOW);
       const windowStart = Date.now();
-      const results = await Promise.all(batch.map((symbol) => fetchOne(symbol, token)));
+      const results = await Promise.all(batch.map((symbol) => fetchOne(symbol)));
       batch.forEach((symbol, idx) => {
         changes[symbol] = results[idx];
       });

@@ -1,5 +1,5 @@
 import { tossExchangeRateResponseSchema } from "./schema";
-import { getTossAccessToken, readRateLimitRemaining, tossFetch } from "./tossAuth";
+import { readRateLimitRemaining, tossAuthedFetch } from "./tossAuth";
 
 export interface FxLookup {
   rate: number;
@@ -8,9 +8,8 @@ export interface FxLookup {
 
 /** USD→KRW is the only pair this app needs (overseas holdings quote in USD). */
 export async function getUsdKrwRate(): Promise<FxLookup> {
-  const token = await getTossAccessToken();
   const path = "/api/v1/exchange-rate?baseCurrency=USD&quoteCurrency=KRW";
-  const res = await tossFetch(path, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await tossAuthedFetch(path);
 
   if (!res.ok) {
     throw new Error(`Toss exchange-rate request failed: ${res.status} ${await res.text()}`);

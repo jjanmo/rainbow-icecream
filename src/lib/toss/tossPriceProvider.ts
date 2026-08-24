@@ -1,5 +1,5 @@
 import { tossPriceResponseSchema } from "./schema";
-import { getTossAccessToken, readRateLimitRemaining, tossFetch } from "./tossAuth";
+import { readRateLimitRemaining, tossAuthedFetch } from "./tossAuth";
 import type { PriceLookup, PriceProvider } from "./priceProvider";
 
 // GET /api/v1/prices?symbols=... accepts up to 200 comma-separated symbols per call.
@@ -18,12 +18,10 @@ export const tossPriceProvider: PriceProvider = {
     let rateLimitRemaining: number | undefined;
     if (symbols.length === 0) return { prices: result };
 
-    const token = await getTossAccessToken();
-
     for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
       const batch = symbols.slice(i, i + BATCH_SIZE);
       const path = `/api/v1/prices?symbols=${encodeURIComponent(batch.join(","))}`;
-      const res = await tossFetch(path, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await tossAuthedFetch(path);
       rateLimitRemaining = readRateLimitRemaining(res.headers) ?? rateLimitRemaining;
 
       if (!res.ok) {
