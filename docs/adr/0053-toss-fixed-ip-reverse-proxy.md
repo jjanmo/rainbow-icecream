@@ -16,7 +16,7 @@ VM에 도메인이 없으므로 DuckDNS(무료 Dynamic DNS)로 서브도메인�
 인프라 설정은 `infra/toss-proxy/`에 nginx 설정 템플릿으로 커밋한다(실제 시크릿 값은 별도 git-ignore 파일로 분리, 상세는 해당 디렉토리의 README 참고).
 
 ## Consequences
-- VM 가용성이 Toss 연동 전체의 단일 장애점이 된다 — VM이 죽으면 시세/환율/체결 조회가 전부 막힌다.
+- VM 가용성이 Toss 연동 전체의 단일 장애점이 된다 — VM이 죽으면 시세/환율/체결 조회가 전부 막힌다. **실제로 배포 다음 날 발생**: `nginx.conf`가 `proxy_pass`에 `openapi.tossinvest.com`을 리터럴로 써서 nginx 시작 시점에만 DNS를 resolve했는데, `unattended-upgrades`가 `systemd-resolved`를 재시작하는 순간과 nginx 재시작이 겹치자 `nginx -t`가 DNS 실패로 죽었고 재시작 정책도 없어서 몇 시간 그대로 멈춰있었다 — Vercel에는 `ECONNREFUSED`로 나타났다. `resolver` + 변수 기반 `proxy_pass`(요청 시점 재해석)와 systemd `Restart=on-failure` override로 수정 (상세 경위는 `infra/toss-proxy/README.md`의 트러블슈팅 절 참고).
 - Let's Encrypt 인증서 자동 갱신에 의존한다.
 - DuckDNS라는 무료 서드파티 서비스에 호스트네임 해석을 의존한다 — 장애 시 대체 수단이 없다. 비용 0원을 우선한 트레이드오프로 accepted.
 - 로컬 개발 환경은 여전히 Toss를 직접 호출한다(`TOSS_PROXY_BASE_URL` 미설정). 개발자 로컬 IP가 Toss 쪽에 별도로 허용돼 있어야 한다는 전제가 깔려 있다 — 이 ADR 범위 밖.
