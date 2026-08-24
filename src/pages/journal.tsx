@@ -387,9 +387,14 @@ export default function JournalPage() {
     });
   }
 
+  /** shiftMonth와 달리 "오늘"은 순수 네비게이션이 아니라 "지금 이 순간을 보여줘"라는
+   * 별도 액션이라 판단해, 달만 옮기지 않고 오늘 날짜로 선택도 교체한다(기존 선택에
+   * 더하지 않음 — 눌렀을 때 정확히 오늘 것만 보이길 기대하기 때문). */
   function goToToday() {
     const t = new Date();
     setCursor({ year: t.getFullYear(), month: t.getMonth() });
+    setSelectionMode('days');
+    setSelectedDays(new Set([localDayKey(t.toISOString())]));
   }
 
   function openAddDialog() {
