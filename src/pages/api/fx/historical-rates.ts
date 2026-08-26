@@ -34,7 +34,7 @@ export default async function handler(
   }
 
   try {
-    const rates = await getUsdKrwHistoricalRates(start, end);
+    const rates = await getUsdKrwHistoricalRates(supabase, start, end);
     return res.status(200).json({ rates });
   } catch (err) {
     console.error("Frankfurter historical rate lookup failed", err);

@@ -343,3 +343,28 @@ alter table executions add constraint executions_executed_at_required_for_trade
   check (intent = 'OPENING_BALANCE' or executed_at is not null);
 
 update executions set executed_at = null where intent = 'OPENING_BALANCE';
+
+-- ---------------------------------------------------------------------------
+-- Migration: 과거 환율(USD->KRW) read-through 캐시 (ADR-0055). 유저 스코핑 없음 —
+-- 전역 참조 데이터고, 한 번 저장된 날짜의 값은 절대 안 바뀐다(체결일이 있는
+-- 매매일지 조회에서만 쓴다 — 평가금액의 실시간 환율은 이 캐시 대상이 아니다).
+-- Idempotent.
+-- ---------------------------------------------------------------------------
+create table if not exists fx_rate_daily (
+  rate_date date primary key,
+  rate numeric not null check (rate > 0),
+  created_at timestamptz not null default now()
+);
+comment on table fx_rate_daily is 'USD->KRW 일별 확정 환율 캐시(Frankfurter/ECB 기준환율). ADR-0055.';
+
+alter table fx_rate_daily enable row level security;
+
+drop policy if exists "authenticated read fx rates" on fx_rate_daily;
+create policy "authenticated read fx rates" on fx_rate_daily
+  for select
+  using (auth.uid() is not null);
+
+drop policy if exists "authenticated write fx rates" on fx_rate_daily;
+create policy "authenticated write fx rates" on fx_rate_daily
+  for insert
+  with check (auth.uid() is not null);

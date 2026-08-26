@@ -60,6 +60,7 @@
 | [0052](./0052-merge-calendar-into-period-multiselect.md) | 매매일지 달력/기간 보기를 통합, 달력에 다중 날짜 선택 추가 | Accepted |
 | [0053](./0053-toss-fixed-ip-reverse-proxy.md) | Toss 고정 IP 요구 대응 — 오라클 클라우드 리버스 프록시 도입 | Accepted |
 | [0054](./0054-auto-delete-and-cross-row-holding-history.md) | 전량 매도 시 종목 자동 삭제, 매매일지는 티커+지역으로 이력을 이어붙임 | Accepted |
+| [0055](./0055-fx-rate-source-architecture.md) | 환율 데이터 아키텍처 — 현재값은 Toss, 과거 확정값은 Frankfurter | Accepted |
 
 ## 새 ADR 작성 형식
 
