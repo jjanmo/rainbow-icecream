@@ -11,8 +11,8 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { toast } from "sonner";
-import { EditGroupCard } from "@/components/setup/EditGroupCard";
-import { GroupCard } from "@/components/setup/GroupCard";
+import { EditGroupCard } from "@/components/portfolio/EditGroupCard";
+import { GroupCard } from "@/components/portfolio/GroupCard";
 import { AllocationDonutChart } from "@/components/shared/AllocationDonutChart";
 import { DataErrorNotice } from "@/components/shared/DataErrorNotice";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +24,7 @@ import { useRebalanceData } from "@/hooks/useRebalanceData";
 import { groupColor } from "@/lib/calc/color";
 import { fmtPct, fmtWon } from "@/lib/format";
 import {
-  commitSetupDraft,
+  commitPortfolioDraft,
   moveDraftHoldingToGroup,
   newDraftGroup,
   reorderDraftGroups,
@@ -33,7 +33,7 @@ import {
   toDraftHolding,
   type DraftGroup,
   type DraftHolding,
-} from "@/lib/setupDraft";
+} from "@/lib/portfolioDraft";
 
 export default function SetupPage() {
   const { data, prices, usdKrwRate, isLoading, isError, error } = useRebalanceData();
@@ -71,7 +71,7 @@ export default function SetupPage() {
     if (!data) return;
     setIsSaving(true);
     try {
-      await commitSetupDraft({
+      await commitPortfolioDraft({
         originalGroups: data.groups,
         originalHoldings: data.holdings,
         draftGroups,

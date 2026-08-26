@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEditableField, useEditableNumberField } from '@/hooks/useEditableField';
 import { resolveHoldingValueKrw } from '@/lib/calc/rebalance';
-import type { DraftGroup, DraftHolding } from '@/lib/setupDraft';
+import type { DraftGroup, DraftHolding } from '@/lib/portfolioDraft';
 import type { LivePriceMap } from '@/types/domain';
 import { EditHoldingInlineRow } from './EditHoldingInlineRow';
 

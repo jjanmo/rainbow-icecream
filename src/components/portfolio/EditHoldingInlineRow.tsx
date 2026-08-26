@@ -2,7 +2,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import { fmtQty, fmtUsd, fmtWon } from "@/lib/format";
-import type { DraftHolding } from "@/lib/setupDraft";
+import type { DraftHolding } from "@/lib/portfolioDraft";
 
 /**
  * 읽기 전용 요약 한 줄 + 드래그 핸들. 종목 필드 편집은 보유종목 페이지로

@@ -2,7 +2,7 @@ import type { AssetGroup, AssetType, Holding, NewAssetGroup, NewHolding, Region 
 
 /**
  * Local, unsaved copy of a group/holding for /portfolio's edit mode. Editing
- * writes only to this shape — nothing touches Supabase until commitSetupDraft
+ * writes only to this shape — nothing touches Supabase until commitPortfolioDraft
  * runs (on "완료"). "취소" just discards it.
  */
 export interface DraftGroup {
@@ -104,7 +104,7 @@ export function reorderDraftGroups(groups: DraftGroup[], orderedClientKeys: stri
   });
 }
 
-export interface SetupDraftMutations {
+export interface PortfolioDraftMutations {
   addGroup: (group: NewAssetGroup) => Promise<AssetGroup>;
   updateGroup: (input: { id: string; patch: Partial<NewAssetGroup> }) => Promise<unknown>;
   deleteGroup: (id: string) => Promise<unknown>;
@@ -121,7 +121,7 @@ export interface SetupDraftMutations {
  * leave some changes applied; callers should keep the draft around on error
  * so the user can retry rather than lose their edits.
  */
-export async function commitSetupDraft({
+export async function commitPortfolioDraft({
   originalGroups,
   originalHoldings,
   draftGroups,
@@ -132,7 +132,7 @@ export async function commitSetupDraft({
   originalHoldings: Holding[];
   draftGroups: DraftGroup[];
   draftHoldings: DraftHolding[];
-  mutations: SetupDraftMutations;
+  mutations: PortfolioDraftMutations;
 }): Promise<void> {
   const draftGroupIds = new Set(draftGroups.filter((g): g is DraftGroup & { id: string } => g.id !== null).map((g) => g.id));
   const draftHoldingIds = new Set(
