@@ -93,7 +93,7 @@ export default function HoldingsPage() {
       {isLoading || !data ? (
         <Skeleton className="h-96 w-full rounded-lg" />
       ) : groupOptions.length === 0 ? (
-        <p className="text-sm text-muted-foreground">먼저 포트폴리오 설정에서 자산군을 추가해주세요.</p>
+        <p className="text-sm text-muted-foreground">먼저 포트폴리오에서 자산군을 추가해주세요.</p>
       ) : (
         <>
           <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">

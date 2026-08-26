@@ -1,7 +1,7 @@
 import type { AssetGroup, AssetType, Holding, NewAssetGroup, NewHolding, Region } from "@/types/domain";
 
 /**
- * Local, unsaved copy of a group/holding for /setup's edit mode. Editing
+ * Local, unsaved copy of a group/holding for /portfolio's edit mode. Editing
  * writes only to this shape — nothing touches Supabase until commitSetupDraft
  * runs (on "완료"). "취소" just discards it.
  */
@@ -77,7 +77,7 @@ export function reorderDraftHoldings(
 /**
  * Moves one holding into a different group during a cross-group drag
  * (ADR-0036), placing it at the end of the target group's list. Used for the
- * live preview while dragging over another group — `/setup`'s drag-end
+ * live preview while dragging over another group — `/portfolio`'s drag-end
  * handler follows up with `reorderDraftHoldings` for precise final position.
  */
 export function moveDraftHoldingToGroup(

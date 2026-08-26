@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
 
-  const redirectTo = typeof router.query.redirectTo === 'string' ? router.query.redirectTo : '/setup';
+  const redirectTo = typeof router.query.redirectTo === 'string' ? router.query.redirectTo : '/portfolio';
   const noAccess = router.query.error === 'no_access';
 
   async function handleSubmit(e: FormEvent) {

@@ -60,7 +60,7 @@ export interface GroupCalc extends AssetGroup {
 }
 
 export interface RebalanceResult {
-  /** Display order (sort_order, created_at, id) — same as /setup shows. */
+  /** Display order (sort_order, created_at, id) — same as /portfolio shows. */
   groups: GroupCalc[];
   holdings: HoldingCalc[];
   totalValue: number;
@@ -89,7 +89,7 @@ export interface ResolvedHoldingValue {
  * Resolves a holding's live price/valuation — the same fallback rules
  * computeRebalance uses internally (no live quote falls back to avgPrice,
  * already in the holding's own native currency), exposed standalone so
- * un-saved draft holdings on /setup can show a live 평가금 without needing
+ * un-saved draft holdings on /portfolio can show a live 평가금 without needing
  * a full Holding row (see EditHoldingInlineRow).
  */
 export function resolveHoldingValueKrw(
@@ -118,7 +118,7 @@ function byCreatedThenId<T extends { createdAt: string; id: string }>(a: T, b: T
   return a.id.localeCompare(b.id);
 }
 
-/** Manual order (drag-and-drop on /setup) first, falling back to creation
+/** Manual order (drag-and-drop on /portfolio) first, falling back to creation
  * order for holdings that haven't been manually reordered yet. */
 function byOrderThenCreatedThenId<T extends { sortOrder: number; createdAt: string; id: string }>(a: T, b: T) {
   if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;

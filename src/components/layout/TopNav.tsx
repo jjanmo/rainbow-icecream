@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
 const NAV_ITEMS = [
-  { href: '/setup', label: '포트폴리오 설정' },
+  { href: '/portfolio', label: '포트폴리오' },
   { href: '/rebalance', label: '비중 체크' },
   { href: '/holdings', label: '보유 종목' },
   { href: '/journal', label: '매매일지' },
@@ -24,7 +24,7 @@ export function TopNav() {
 
   return (
     <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-4 border-b border-border bg-card px-4 py-3 sm:px-8">
-      <Link href="/setup" className="flex items-center gap-2.5">
+      <Link href="/portfolio" className="flex items-center gap-2.5">
         <LogoMark size={34} />
         <div className="flex flex-col leading-tight">
           <span className="text-base font-semibold tracking-tight text-foreground">Rainbow Icecream</span>

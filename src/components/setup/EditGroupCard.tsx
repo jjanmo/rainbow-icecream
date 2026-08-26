@@ -53,7 +53,7 @@ export function EditGroupCard({
   };
 
   // 종목 dnd 전용 드롭 대상 — 자산군 간 이동 시 헤더 위로 놓으면(특히 접힌
-  // 상태에서) 이 자산군 맨 뒤로 옮겨진다 (pages/setup.tsx의 handleHoldingDragOver).
+  // 상태에서) 이 자산군 맨 뒤로 옮겨진다 (pages/portfolio.tsx의 handleHoldingDragOver).
   const { setNodeRef: setHeaderDroppableRef, isOver } = useDroppable({
     id: groupDropId(group.clientKey),
     data: { type: 'group-header', groupClientKey: group.clientKey },

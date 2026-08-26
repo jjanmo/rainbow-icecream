@@ -607,7 +607,7 @@ export default function JournalPage() {
           <Skeleton className="h-40 w-full rounded-lg" />
         </div>
       ) : (groupsQuery.data ?? []).length === 0 ? (
-        <p className="text-sm text-muted-foreground">먼저 포트폴리오 설정에서 자산군을 추가해주세요.</p>
+        <p className="text-sm text-muted-foreground">먼저 포트폴리오에서 자산군을 추가해주세요.</p>
       ) : viewMode === 'holding' ? (
         <div className="flex flex-col gap-5">
           <div className="rounded-lg border border-border bg-card p-4 sm:p-5">

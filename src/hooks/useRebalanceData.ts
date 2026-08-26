@@ -29,7 +29,7 @@ export function useRebalanceData() {
   return {
     data: result,
     // Exposed so callers can resolve a live valuation for data that hasn't
-    // gone through computeRebalance yet — e.g. /setup's unsaved draft
+    // gone through computeRebalance yet — e.g. /portfolio's unsaved draft
     // holdings (see lib/calc/rebalance.ts resolveHoldingValueKrw).
     prices: pricesQuery.data ?? {},
     usdKrwRate: fxQuery.data?.rate ?? DEFAULT_USD_KRW_RATE,

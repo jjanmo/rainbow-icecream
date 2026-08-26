@@ -184,7 +184,7 @@ export default function SetupPage() {
     <div>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="mb-1.5 text-xl font-semibold sm:text-2xl">포트폴리오 설정</h1>
+          <h1 className="mb-1.5 text-xl font-semibold sm:text-2xl">포트폴리오</h1>
           <p className="text-sm text-muted-foreground">
             자산군의 전체 목표 비중과, 그 안에서 각 종목이 차지할 비중을 정하세요.
           </p>

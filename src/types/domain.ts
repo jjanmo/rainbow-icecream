@@ -21,7 +21,7 @@ export interface AssetGroup {
   userId: string;
   name: string;
   targetPct: number;
-  /** Manual display order (lower = earlier), set via drag-and-drop on /setup.
+  /** Manual display order (lower = earlier), set via drag-and-drop on /portfolio.
    * Also drives this group's color — see lib/calc/color.ts hueForGroupIndex —
    * color itself is never stored, only derived from position. */
   sortOrder: number;
@@ -45,7 +45,7 @@ export interface Holding {
   account: string | null;
   region: Region;
   assetType: AssetType;
-  /** Manual display order within its group (lower = earlier), set via drag-and-drop on /setup. */
+  /** Manual display order within its group (lower = earlier), set via drag-and-drop on /portfolio. */
   sortOrder: number;
   /** soft delete — 하드 삭제는 executions/trade_notes까지 cascade로 영구히 지워서,
    * 나중에 같은 종목을 재매수했을 때 예전 기록을 다시 볼 방법이 없어진다 (ADR-0045). */

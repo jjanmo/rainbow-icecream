@@ -1,7 +1,7 @@
 import type { GetServerSideProps } from "next";
 
 export const getServerSideProps: GetServerSideProps = async () => {
-  return { redirect: { destination: "/setup", permanent: false } };
+  return { redirect: { destination: "/portfolio", permanent: false } };
 };
 
 export default function IndexPage() {
