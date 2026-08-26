@@ -55,7 +55,7 @@ export async function fetchHoldings(supabase: SupabaseClient): Promise<Holding[]
 }
 
 /** 삭제된 것까지 포함한 전체 종목 — 매매일지가 히스토리 조회(종목 모드, 기간
- * 모드의 종목명 표시)에 쓴다. `/holdings`·`/portfolio`·`/rebalance`는 "지금 보유
+ * 모드의 종목명 표시)에 쓴다. `/holdings`·`/portfolio`는 "지금 보유
  * 중인 포트폴리오"를 보여줘야 하므로 계속 fetchHoldings(활성만)를 쓴다 — 이
  * 함수와 섞어 쓰지 않는다. */
 export async function fetchAllHoldings(supabase: SupabaseClient): Promise<Holding[]> {

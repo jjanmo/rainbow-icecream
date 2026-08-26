@@ -8,7 +8,6 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
 const NAV_ITEMS = [
   { href: '/portfolio', label: '포트폴리오' },
-  { href: '/rebalance', label: '비중 체크' },
   { href: '/holdings', label: '보유 종목' },
   { href: '/journal', label: '매매일지' },
 ] as const;

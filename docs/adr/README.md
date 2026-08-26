@@ -28,7 +28,7 @@
 | [0020](./0020-setup-donut-chart.md) | 설정 페이지 상단을 바 차트에서 도넛 차트로 교체 | Accepted |
 | [0021](./0021-setup-holding-panels.md) | 설정 페이지 종목 표시 — 읽기 2컬럼 파이+리스트, 편집 접힌 줄 요약 | Accepted |
 | [0022](./0022-cash-like-holding-entry.md) | 종목 모달에 원화/달러 체크박스로 현금성 자산 등록 경로 복구 | Partially superseded by ADR-0044 |
-| [0023](./0023-rebalance-page-dedup.md) | 비중 체크 페이지에서 설정/보유종목 페이지와 중복되는 내용 제거 | Accepted |
+| [0023](./0023-rebalance-page-dedup.md) | 비중 체크 페이지에서 설정/보유종목 페이지와 중복되는 내용 제거 | Superseded by ADR-0056 |
 | [0024](./0024-group-level-rebalance-only.md) | 리밸런싱 판단은 자산군 단위로만 (종목 단위 목표/괴리 제거) | Accepted |
 | [0025](./0025-holding-color-pinned-to-creation-order.md) | 종목 색상은 최초 생성 순서에 고정 (드래그 재정렬과 분리) | Superseded by ADR-0040 |
 | [0026](./0026-diff-sign-colors-and-threshold-10.md) | 괴리는 상승/하락 색, 조치 여부는 같은 계열 강조 · 기준 10%p · 리밸런싱 상태 컬럼 | Accepted |
@@ -61,6 +61,7 @@
 | [0053](./0053-toss-fixed-ip-reverse-proxy.md) | Toss 고정 IP 요구 대응 — 오라클 클라우드 리버스 프록시 도입 | Accepted |
 | [0054](./0054-auto-delete-and-cross-row-holding-history.md) | 전량 매도 시 종목 자동 삭제, 매매일지는 티커+지역으로 이력을 이어붙임 | Accepted |
 | [0055](./0055-fx-rate-source-architecture.md) | 환율 데이터 아키텍처 — 현재값은 Toss, 과거 확정값은 Frankfurter | Accepted |
+| [0056](./0056-merge-rebalance-into-portfolio.md) | "비중 체크" 페이지를 없애고 포트폴리오 화면에 흡수 | Accepted |
 
 ## 새 ADR 작성 형식
 

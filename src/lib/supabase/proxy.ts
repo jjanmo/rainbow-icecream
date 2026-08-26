@@ -3,7 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnv } from "./env";
 
-const PROTECTED_PREFIXES = ["/portfolio", "/rebalance", "/holdings", "/journal"];
+const PROTECTED_PREFIXES = ["/portfolio", "/holdings", "/journal"];
 
 // This Supabase project may be shared with other apps. A valid session alone
 // doesn't mean the account was provisioned for THIS app — that's tracked via
@@ -34,7 +34,7 @@ function withRefreshedCookies(from: NextResponse, to: NextResponse): NextRespons
 
 /**
  * Refreshes the Supabase session cookie on every navigation and gates
- * /portfolio, /rebalance, /holdings, /journal, and / behind auth. Called from root proxy.ts.
+ * /portfolio, /holdings, /journal, and / behind auth. Called from root proxy.ts.
  * Uses getUser() (JWT re-verified against the Auth server), not getSession().
  */
 export async function updateSession(request: NextRequest) {

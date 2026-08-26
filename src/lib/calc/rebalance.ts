@@ -1,9 +1,6 @@
 import type { AssetGroup, Currency, Holding, LivePriceMap, Region } from "@/types/domain";
 import { colorFor, FLAVOR_HEXES, hueForGroupIndex } from "./color";
 
-/** Diff (percentage points) below which an asset group is considered "on target". */
-export const REBALANCE_THRESHOLD = 10;
-
 export const GOOD_COLOR = FLAVOR_HEXES[1]; // 민트
 
 // Signed percentage-point diffs follow the Korean market convention users
@@ -13,8 +10,6 @@ export const GOOD_COLOR = FLAVOR_HEXES[1]; // 민트
 // fixed pair can't stay legible on both the near-white and the dark card.
 const RISE_COLOR = "var(--diff-rise)"; // + : 실제가 목표보다 높음 → 매도 필요
 const FALL_COLOR = "var(--diff-fall)"; // − : 실제가 목표보다 낮음 → 매수 필요
-const RISE_STRONG_COLOR = "var(--diff-rise-strong)";
-const FALL_STRONG_COLOR = "var(--diff-fall-strong)";
 
 /** Loss red for 수익률 only — see returnColor. */
 const LOSS_COLOR = "oklch(55% 0.16 25)";
@@ -55,7 +50,11 @@ export interface GroupCalc extends AssetGroup {
   value: number;
   actualPct: number;
   diff: number;
-  /** Positive = sell this much, negative = buy this much (KRW), to reach target. */
+  /** targetValue - actualValue. Positive = buy this much, negative = sell
+   * this much (KRW), to reach target — verified against the formula below,
+   * the old comment here had these backwards (harmless in practice since
+   * every caller only ever showed Math.abs(actionAmount) colored by diff's
+   * sign, never actionAmount's own sign, until now). */
   actionAmount: number;
 }
 
@@ -213,32 +212,15 @@ export function computeRebalance({
 }
 
 /**
- * Colors a signed diff by its sign alone — deliberately independent of
- * REBALANCE_THRESHOLD. A +3%p drift is still a rise even when it needs no
- * action, so the number keeps the rise/fall meaning it has everywhere else;
- * whether action is needed is expressed by actionColor/actionLabel instead.
+ * Colors a signed diff by its sign alone. Plus means actual is above target
+ * (매도 필요 방향), minus means actual is below target (매수 필요 방향) — the
+ * sign/color alone carries that direction now (no separate 유지/매수 필요/매도
+ * 필요 verdict label or threshold — that was scoped out when the standalone
+ * 비중 체크 page was folded into /portfolio, see ADR-0056).
  */
 export function diffColor(diff: number): string {
   if (diff === 0) return "var(--muted-foreground)";
   return diff > 0 ? RISE_COLOR : FALL_COLOR;
-}
-
-/**
- * Color for the rebalance verdict. Always the same color family as diffColor
- * for the same diff — only a lightness step apart — so the verdict and the
- * number it came from read as one signal per row rather than two unrelated
- * ones. "유지" needs no action, so it drops out of the rise/fall scale entirely
- * and uses plain body text colour (never the mint GOOD_COLOR, which would put
- * a third, off-family hue in the row).
- */
-export function actionColor(diff: number): string {
-  if (Math.abs(diff) < REBALANCE_THRESHOLD) return "var(--foreground)";
-  return diff > 0 ? RISE_STRONG_COLOR : FALL_STRONG_COLOR;
-}
-
-export function actionLabel(diff: number): "유지" | "매도 필요" | "매수 필요" {
-  if (Math.abs(diff) < REBALANCE_THRESHOLD) return "유지";
-  return diff > 0 ? "매도 필요" : "매수 필요";
 }
 
 export function returnColor(returnPct: number): string {
