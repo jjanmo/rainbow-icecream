@@ -21,10 +21,15 @@ create table if not exists holdings (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   -- restrict, not cascade: deleting a group must not delete its holdings.
-  -- lib/api/groups.ts's deleteGroup reassigns them to a "미분류" group first
-  -- (find-or-create), so this FK should never actually block a delete in
-  -- practice — it's a safety net if that reassignment is ever skipped.
-  group_id uuid not null references asset_groups(id) on delete restrict,
+  -- lib/api/groups.ts's deleteGroup reassigns active holdings to a "미분류"
+  -- group first (find-or-create), so this FK should never actually block a
+  -- delete in practice — it's a safety net if that reassignment is ever
+  -- skipped. Nullable (ADR-0057): a soft-deleted holding's group_id gets set
+  -- to null instead of reassigned — it's already invisible everywhere, so
+  -- forcing it onto some real group (even "미분류") would be false data, and
+  -- specifically caused "미분류" to endlessly recreate itself when deleted
+  -- (a dead holding left pointing at it kept tripping the same reassignment).
+  group_id uuid references asset_groups(id) on delete restrict,
   ticker text,
   name text not null default '새 종목',
   target_pct_in_group numeric not null default 0 check (target_pct_in_group between 0 and 100),
@@ -80,14 +85,15 @@ create policy "own groups" on asset_groups
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
 
--- holdings: must own the row AND own the group it points to (blocks cross-user group_id insertion)
+-- holdings: must own the row AND own the group it points to (blocks cross-user group_id insertion).
+-- group_id may be null only for a soft-deleted holding (ADR-0057).
 drop policy if exists "own holdings" on holdings;
 create policy "own holdings" on holdings
   for all
   using (user_id = auth.uid())
   with check (
     user_id = auth.uid()
-    and group_id in (select id from asset_groups where user_id = auth.uid())
+    and (group_id is null or group_id in (select id from asset_groups where user_id = auth.uid()))
   );
 
 -- ---------------------------------------------------------------------------
@@ -368,3 +374,22 @@ drop policy if exists "authenticated write fx rates" on fx_rate_daily;
 create policy "authenticated write fx rates" on fx_rate_daily
   for insert
   with check (auth.uid() is not null);
+
+-- ---------------------------------------------------------------------------
+-- Migration: holdings.group_id를 nullable로 (ADR-0057). 그룹이 삭제될 때
+-- 소프트 삭제된 종목은 이제 다른 그룹("미분류" 포함)으로 재배정하지 않고
+-- group_id를 null로 비운다 — 이미 앱 어디서도 안 보이는 종목이라 실제로
+-- 속한 적 없는 그룹을 억지로 가리키게 하는 건 거짓 데이터고, 특히 "미분류"로
+-- 보내면 "미분류" 자신을 지울 때 그 죽은 종목이 다시 걸려 새 "미분류"가
+-- 끝없이 재생성되는 버그가 있었다. Idempotent.
+-- ---------------------------------------------------------------------------
+alter table holdings alter column group_id drop not null;
+
+drop policy if exists "own holdings" on holdings;
+create policy "own holdings" on holdings
+  for all
+  using (user_id = auth.uid())
+  with check (
+    user_id = auth.uid()
+    and (group_id is null or group_id in (select id from asset_groups where user_id = auth.uid()))
+  );

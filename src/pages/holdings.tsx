@@ -19,7 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useDailyReturns } from '@/hooks/useDailyReturns';
 import { useAddHolding, useDeleteHolding, useUpdateHolding } from '@/hooks/useHoldings';
 import { useRebalanceData } from '@/hooks/useRebalanceData';
-import type { Holding } from '@/types/domain';
+import type { Holding, NewHolding } from '@/types/domain';
 import { cn } from '@/lib/utils';
 
 type HoldingsView = 'table' | 'heatmap';
@@ -149,7 +149,9 @@ export default function HoldingsPage() {
         onOpenChange={setModalOpen}
         groupOptions={groupOptions}
         defaultGroupId={groupOptions[0]?.id ?? null}
-        initialHolding={editingHolding}
+        // editingHolding only ever comes from the active-only holdings list —
+        // its groupId is never null (only a soft-deleted holding's can be).
+        initialHolding={editingHolding as NewHolding | null}
         onSubmit={(holding) => {
           if (editingHolding) {
             updateHolding.mutate({ id: editingHolding.id, patch: holding });

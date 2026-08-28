@@ -37,11 +37,13 @@ export function toDraftGroup(g: AssetGroup): DraftGroup {
   return { clientKey: g.id, id: g.id, name: g.name, targetPct: g.targetPct, sortOrder: g.sortOrder };
 }
 
+// /portfolio only ever drafts from the active-only fetchHoldings() result, so
+// h.groupId is never null here (only a soft-deleted holding can have one).
 export function toDraftHolding(h: Holding): DraftHolding {
   return {
     clientKey: h.id,
     id: h.id,
-    groupClientKey: h.groupId,
+    groupClientKey: h.groupId!,
     ticker: h.ticker,
     name: h.name,
     targetPctInGroup: h.targetPctInGroup,
@@ -147,7 +149,7 @@ export async function commitPortfolioDraft({
 
   // 2. Deleted holdings, excluding ones already gone via a deleted group.
   const deletedHoldings = originalHoldings.filter(
-    (h) => !draftHoldingIds.has(h.id) && !deletedGroupIds.has(h.groupId),
+    (h) => !draftHoldingIds.has(h.id) && !deletedGroupIds.has(h.groupId!),
   );
   for (const h of deletedHoldings) {
     await mutations.deleteHolding(h.id);

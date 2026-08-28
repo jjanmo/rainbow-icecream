@@ -146,19 +146,22 @@ export function computeRebalance({
 
   const totalValue = holdingsStable.reduce((sum, h) => sum + (resolvedPrices.get(h.id)?.value ?? 0), 0);
 
+  // holdings is always the active-only fetchHoldings() result here (/portfolio,
+  // /holdings) — groupId is only ever null on a soft-deleted holding
+  // (lib/api/groups.ts's deleteGroup), which never appears in that query.
   const groupValue = new Map<string, number>();
   holdingsStable.forEach((h) => {
     const value = resolvedPrices.get(h.id)?.value ?? 0;
-    groupValue.set(h.groupId, (groupValue.get(h.groupId) ?? 0) + value);
+    groupValue.set(h.groupId!, (groupValue.get(h.groupId!) ?? 0) + value);
   });
 
   const holdingsCalc: HoldingCalc[] = holdingsStable.map((h) => {
-    const group = groupById.get(h.groupId);
-    const groupIndex = groupIndexById.get(h.groupId) ?? 0;
+    const group = groupById.get(h.groupId!);
+    const groupIndex = groupIndexById.get(h.groupId!) ?? 0;
     const hue = hueForGroupIndex(groupIndex, sortedGroups.length);
     const { priceNative, nativeCurrency, priceKrw, value, valueNative, hasLivePrice } = resolvedPrices.get(h.id)!;
     const actualPct = totalValue > 0 ? (value / totalValue) * 100 : 0;
-    const gValue = groupValue.get(h.groupId) ?? 0;
+    const gValue = groupValue.get(h.groupId!) ?? 0;
     const actualPctInGroup = gValue > 0 ? (value / gValue) * 100 : 0;
     // Compared in the holding's own native currency (not priceKrw) so a
     // 해외 holding's return isn't distorted by FX movement since purchase —
@@ -183,9 +186,9 @@ export function computeRebalance({
 
   const holdingsByGroup = new Map<string, HoldingCalc[]>();
   holdingsCalc.forEach((h) => {
-    const arr = holdingsByGroup.get(h.groupId) ?? [];
+    const arr = holdingsByGroup.get(h.groupId!) ?? [];
     arr.push(h);
-    holdingsByGroup.set(h.groupId, arr);
+    holdingsByGroup.set(h.groupId!, arr);
   });
 
   const groupsCalc: GroupCalc[] = sortedGroups.map((g, index) => {

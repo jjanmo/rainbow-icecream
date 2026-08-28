@@ -124,13 +124,15 @@ function buildHeatmapData(
   dailyChangeByTicker: Record<string, number>,
   isLoadingDailyChanges: boolean,
 ): HeatmapGroupNode[] {
+  // /holdings는 항상 active-only fetchHoldings() 결과만 다뤄서 groupId가 null일
+  // 일이 없다(소프트 삭제된 종목에만 null이 생김, lib/api/groups.ts's deleteGroup).
   const byGroup = new Map<string, HeatmapGroupNode>();
   for (const h of holdings) {
     if (h.value <= 0) continue; // 트리맵 면적은 양수만 가능 — 수량 0인 종목 등은 제외
-    let group = byGroup.get(h.groupId);
+    let group = byGroup.get(h.groupId!);
     if (!group) {
-      group = { name: h.groupName, groupId: h.groupId, color: h.groupColor, children: [] };
-      byGroup.set(h.groupId, group);
+      group = { name: h.groupName, groupId: h.groupId!, color: h.groupColor, children: [] };
+      byGroup.set(h.groupId!, group);
     }
     // ticker가 없는 현금성 자산은 시세 자체가 없어 등락도 없다(항상 중립) — API 조회 대상이 아니다.
     const changePct = h.ticker === null ? 0 : dailyChangeByTicker[h.ticker];
@@ -146,7 +148,7 @@ function buildHeatmapData(
       unavailable,
       value: h.value,
       groupName: h.groupName,
-      groupId: h.groupId,
+      groupId: h.groupId!,
       groupColor: h.groupColor,
       isFirstInGroup: false,
     });

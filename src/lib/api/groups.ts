@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { clearHoldingGroup } from "@/lib/api/holdings";
 import type { AssetGroup, NewAssetGroup } from "@/types/domain";
 
 interface GroupRow {
@@ -91,24 +92,41 @@ async function findOrCreateUnclassifiedGroup(supabase: SupabaseClient, excludeId
 }
 
 /**
- * 자산군을 삭제해도 그 안의 종목은 지우지 않는다 — "미분류" 자산군으로
- * 옮긴다(find-or-create). `holdings.group_id`의 FK가 `on delete restrict`라
- * 재배정 없이 delete만 하면 그대로 실패한다.
+ * 자산군을 삭제해도 그 안의 종목은 지우지 않는다 — 살아있는 종목은 "미분류"
+ * 자산군으로 옮긴다(find-or-create). `holdings.group_id`의 FK가
+ * `on delete restrict`라 재배정 없이 delete만 하면 그대로 실패한다.
+ *
+ * 소프트 삭제된 종목만 남아있어도 그 group_id는 여전히 이 그룹을 가리키고
+ * 있어 FK가 걸린다 — 하지만 "미분류"로 보내지 않고 group_id를 null로 비운다
+ * (`clearHoldingGroup`, `holdings.group_id`를 nullable로 둔 이유가 이 경우
+ * 하나를 정확히 표현하기 위해서다). 예전엔 살아있는지 여부와 무관하게 무조건
+ * "미분류"로 보냈는데, 그러면 (a) 실제로는 속한 적 없는 그룹을 죽은 종목이
+ * 계속 가리키는 거짓 데이터가 남고, (b) "미분류" 자신을 지울 때도 그 안의
+ * 죽은 종목이 똑같이 걸려서 새 "미분류"를 또 만들어내는 무한 재생성 버그가
+ * 있었다(실제 재현됨 — 사용자가 "미분류"를 지워도 지워도 자동으로 다시
+ * 생긴다고 보고함). null이면 어느 그룹을 지우든 죽은 종목이 다시 걸릴 일
+ * 자체가 없다.
  */
 export async function deleteGroup(supabase: SupabaseClient, id: string): Promise<void> {
   const { data: members, error: fetchError } = await supabase
     .from("holdings")
-    .select("id")
+    .select("id, deleted_at")
     .eq("group_id", id);
   if (fetchError) throw fetchError;
 
   if (members && members.length > 0) {
-    const unclassifiedId = await findOrCreateUnclassifiedGroup(supabase, id);
-    const { error: reassignError } = await supabase
-      .from("holdings")
-      .update({ group_id: unclassifiedId })
-      .eq("group_id", id);
-    if (reassignError) throw reassignError;
+    const activeIds = members.filter((m) => m.deleted_at === null).map((m) => m.id);
+    const deadIds = members.filter((m) => m.deleted_at !== null).map((m) => m.id);
+
+    if (activeIds.length > 0) {
+      const unclassifiedId = await findOrCreateUnclassifiedGroup(supabase, id);
+      const { error: reassignError } = await supabase
+        .from("holdings")
+        .update({ group_id: unclassifiedId })
+        .in("id", activeIds);
+      if (reassignError) throw reassignError;
+    }
+    await clearHoldingGroup(supabase, deadIds);
   }
 
   const { error } = await supabase.from("asset_groups").delete().eq("id", id);

@@ -31,7 +31,11 @@ export interface AssetGroup {
 export interface Holding {
   id: string;
   userId: string;
-  groupId: string;
+  /** null only for a soft-deleted holding whose group was later deleted —
+   * `deleteGroup` (`lib/api/groups.ts`) nulls it out rather than pointing it
+   * at some other real group it never actually belonged to (a live holding's
+   * group_id is never null; that's enforced by app logic, not the DB type). */
+  groupId: string | null;
   ticker: string | null;
   name: string;
   targetPctInGroup: number;
@@ -63,4 +67,6 @@ export interface LivePrice {
 export type LivePriceMap = Record<string, LivePrice>;
 
 export type NewAssetGroup = Omit<AssetGroup, "id" | "userId" | "createdAt">;
-export type NewHolding = Omit<Holding, "id" | "userId" | "createdAt" | "deletedAt">;
+/** groupId narrowed back to non-null — a holding is always created into a real
+ * group; only `deleteGroup` nulls it out for an already-dead holding. */
+export type NewHolding = Omit<Holding, "id" | "userId" | "createdAt" | "deletedAt" | "groupId"> & { groupId: string };
