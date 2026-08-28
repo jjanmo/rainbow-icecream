@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useComboboxSearch } from '@/hooks/useComboboxSearch';
 import { cn } from '@/lib/utils';
 import { computeExecutionAmount, currencyOf, normalizeQty } from '@/lib/journal/cost';
 import { fmtQty, fmtUsd, fmtWon } from '@/lib/format';
@@ -240,6 +241,9 @@ export function ExecutionFormDialog({
         .map((h) => ({ value: h.id, label: holdingOptionLabel(h) })),
     [holdings, accountFilter],
   );
+  // base-ui 콤보박스의 내장 필터링은 한글 조합 중엔 목록을 안 좁혀서(위 훅 주석 참고)
+  // 클릭/Enter로 엉뚱한 종목이 골라지는 버그가 있었다 — 검색어를 직접 추적해 우회한다.
+  const holdingSearch = useComboboxSearch(holdingComboItems, (item) => item.label);
   const buyHistory = selected ? buyNotesFor(selected.id) : [];
 
   function prefillNoteIfEmpty(id: string) {
@@ -259,6 +263,7 @@ export function ExecutionFormDialog({
 
   function handleHoldingChange(id: string) {
     setHoldingId(id);
+    holdingSearch.reset();
     // 콤보박스에서 직접 고르면 계좌 필터를 그 종목 계좌로 맞춰 둘이 계속 일치하게 한다.
     const h = holdingById.get(id);
     if (h?.account) setAccountFilter(h.account);
@@ -543,11 +548,12 @@ export function ExecutionFormDialog({
                 </Select>
                 <Combobox<HoldingComboItem>
                   items={holdingComboItems}
+                  filteredItems={holdingSearch.filteredItems}
                   value={holdingComboItems.find((i) => i.value === holdingId) ?? null}
                   onValueChange={(item) => handleHoldingChange(item?.value ?? '')}
                   disabled={!!editingExecution}
                 >
-                  <ComboboxInput placeholder="종목 검색" className="w-full" />
+                  <ComboboxInput placeholder="종목 검색" className="w-full" {...holdingSearch.inputProps} />
                   <ComboboxContent>
                     <ComboboxEmpty>검색 결과가 없습니다.</ComboboxEmpty>
                     <ComboboxList>

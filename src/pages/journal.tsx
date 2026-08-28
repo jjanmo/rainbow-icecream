@@ -44,6 +44,7 @@ import { useAddHolding, useAllHoldings, useHoldings } from '@/hooks/useHoldings'
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { useHistoricalFxRates } from '@/hooks/useHistoricalFxRates';
 import { useDeleteTradeNote, useTradeNotes, useUpsertTradeNote } from '@/hooks/useTradeNotes';
+import { useComboboxSearch } from '@/hooks/useComboboxSearch';
 import { returnColor } from '@/lib/calc/rebalance';
 import { OversoldError } from '@/lib/journal/commit';
 import { replayHolding, type ClosedLot } from '@/lib/journal/replay';
@@ -415,6 +416,9 @@ export default function JournalPage() {
       }),
     [holdingGroupsByKey],
   );
+  // base-ui 콤보박스의 내장 필터링은 한글 조합 중엔 목록을 안 좁혀서 클릭으로
+  // 엉뚱한 종목이 골라지는 버그가 있었다(useComboboxSearch 주석 참고) — 우회.
+  const holdingSearch = useComboboxSearch(holdingComboItems, (item) => item.label);
   const holdingBuyNotes = useMemo(
     () => notesForSide(holdingExecutions, tradeNotes, 'BUY'),
     [holdingExecutions, tradeNotes],
@@ -613,10 +617,14 @@ export default function JournalPage() {
           <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
             <Combobox<HoldingComboItem>
               items={holdingComboItems}
+              filteredItems={holdingSearch.filteredItems}
               value={holdingComboItems.find((i) => i.value === selectedHoldingId) ?? null}
-              onValueChange={(item) => setSelectedHoldingId(item?.value ?? '')}
+              onValueChange={(item) => {
+                setSelectedHoldingId(item?.value ?? '');
+                holdingSearch.reset();
+              }}
             >
-              <ComboboxInput placeholder="종목 검색" className="w-full sm:w-80" />
+              <ComboboxInput placeholder="종목 검색" className="w-full sm:w-80" {...holdingSearch.inputProps} />
               <ComboboxContent>
                 <ComboboxEmpty>검색 결과가 없습니다.</ComboboxEmpty>
                 <ComboboxList>
