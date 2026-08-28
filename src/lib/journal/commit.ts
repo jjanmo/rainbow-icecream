@@ -96,6 +96,15 @@ export async function commitExecutionDelete(
   holding: Holding,
   executionId: string,
 ): Promise<ReplayResult> {
+  // 지우기 전에 "이 체결 없이" 먼저 리플레이해 oversold가 나는지 미리 확인한다
+  // (예: 기초잔고를 지웠는데 그 수량에 기대던 매도가 남아있는 경우). commitNewExecution과
+  // 달리 여긴 실패 시 되돌리는 로직이 없어서, 먼저 softDeleteExecution부터 하면
+  // "삭제에 실패했습니다" 토스트가 뜨는데 실제로는 DB에서 이미 지워진 상태가 되는
+  // 버그가 있었다 — 그래서 DB에 아무것도 쓰기 전에 dry-run으로 먼저 막는다.
+  const remaining = (await fetchExecutionsForHolding(supabase, holding.id)).filter((e) => e.id !== executionId);
+  const dryRun = replayHolding(remaining, contextFor(holding));
+  if (dryRun.oversold.length > 0) throw new OversoldError(dryRun.oversold);
+
   await softDeleteExecution(supabase, executionId);
   return replayAndPersistHolding(supabase, holding);
 }

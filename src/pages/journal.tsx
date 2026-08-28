@@ -557,6 +557,10 @@ export default function JournalPage() {
       await deleteExecution.mutateAsync({ holding, id: execution.id });
       toast.success('체결을 삭제했습니다. 이후 구간이 재계산됩니다.');
     } catch (err) {
+      if (err instanceof OversoldError) {
+        toast.error('이 체결을 지우면 보유 수량보다 많이 매도한 게 되어 삭제하지 않았습니다.');
+        return;
+      }
       console.error('Failed to delete execution', err);
       toast.error('삭제에 실패했습니다.');
     }
