@@ -95,7 +95,10 @@ export function GroupHoldingsPanel({ group }: { group: GroupCalc }) {
               <span className="w-14 shrink-0 truncate font-mono text-muted-foreground">{h.ticker ?? ""}</span>
               <span className="flex-1 truncate">{h.name}</span>
               <span className="w-16 shrink-0 truncate text-right text-muted-foreground">{h.account || "-"}</span>
-              <span className="w-32 shrink-0 text-right font-mono">
+              {/* w-52 — 해외 종목의 원화+달러 병기("₩999,999,999($714,285.71)"류,
+                  괄호 안 포함 최대 약 184px 실측)가 원화 억 단위까지 커져도
+                  옆 % 칸과 안 겹치게, w-32(128px)보다 넉넉히 잡았다. */}
+              <span className="w-52 shrink-0 text-right font-mono">
                 {fmtWon(h.value)}
                 {isOverseas && <span className="ml-1 text-muted-foreground">({fmtUsd(h.valueNative)})</span>}
               </span>
