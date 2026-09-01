@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AssetType, Holding, NewHolding, Region } from "@/types/domain";
+import type { AssetType, ExposureRegion, Holding, NewHolding, Region } from "@/types/domain";
 
 interface HoldingRow {
   id: string;
@@ -13,13 +13,14 @@ interface HoldingRow {
   account: string | null;
   region: Region;
   asset_type: AssetType;
+  exposure_region: ExposureRegion | null;
   sort_order: number;
   deleted_at: string | null;
   created_at: string;
 }
 
 const COLUMNS =
-  "id, user_id, group_id, ticker, name, target_pct_in_group, qty, avg_price, account, region, asset_type, sort_order, deleted_at, created_at";
+  "id, user_id, group_id, ticker, name, target_pct_in_group, qty, avg_price, account, region, asset_type, exposure_region, sort_order, deleted_at, created_at";
 
 function toDomain(row: HoldingRow): Holding {
   return {
@@ -34,6 +35,7 @@ function toDomain(row: HoldingRow): Holding {
     account: row.account,
     region: row.region,
     assetType: row.asset_type,
+    exposureRegion: row.exposure_region,
     sortOrder: row.sort_order,
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
@@ -84,6 +86,7 @@ export async function insertHolding(
       account: holding.account,
       region: holding.region,
       asset_type: holding.assetType,
+      exposure_region: holding.exposureRegion,
       sort_order: holding.sortOrder,
     })
     .select(COLUMNS)
@@ -107,6 +110,7 @@ export async function updateHolding(
   if (patch.account !== undefined) update.account = patch.account;
   if (patch.region !== undefined) update.region = patch.region;
   if (patch.assetType !== undefined) update.asset_type = patch.assetType;
+  if (patch.exposureRegion !== undefined) update.exposure_region = patch.exposureRegion;
   if (patch.sortOrder !== undefined) update.sort_order = patch.sortOrder;
 
   const { error } = await supabase.from("holdings").update(update).eq("id", id);

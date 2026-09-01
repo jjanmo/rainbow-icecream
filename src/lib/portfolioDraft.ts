@@ -1,4 +1,12 @@
-import type { AssetGroup, AssetType, Holding, NewAssetGroup, NewHolding, Region } from "@/types/domain";
+import type {
+  AssetGroup,
+  AssetType,
+  ExposureRegion,
+  Holding,
+  NewAssetGroup,
+  NewHolding,
+  Region,
+} from "@/types/domain";
 
 /**
  * Local, unsaved copy of a group/holding for /portfolio's edit mode. Editing
@@ -30,6 +38,8 @@ export interface DraftHolding {
   account: string | null;
   region: Region;
   assetType: AssetType;
+  /** /portfolio 편집 모드에선 안 고치지만, 커밋 때 안 떨어뜨리려고 실어 나른다 (ADR-0058). */
+  exposureRegion: ExposureRegion | null;
   sortOrder: number;
 }
 
@@ -52,6 +62,7 @@ export function toDraftHolding(h: Holding): DraftHolding {
     account: h.account,
     region: h.region,
     assetType: h.assetType,
+    exposureRegion: h.exposureRegion,
     sortOrder: h.sortOrder,
   };
 }
@@ -196,6 +207,7 @@ export async function commitPortfolioDraft({
       account: h.account,
       region: h.region,
       assetType: h.assetType,
+      exposureRegion: h.exposureRegion,
       sortOrder: h.sortOrder,
     });
   }
@@ -217,6 +229,7 @@ export async function commitPortfolioDraft({
     if (original.account !== h.account) patch.account = h.account;
     if (original.region !== h.region) patch.region = h.region;
     if (original.assetType !== h.assetType) patch.assetType = h.assetType;
+    if (original.exposureRegion !== h.exposureRegion) patch.exposureRegion = h.exposureRegion;
     if (original.sortOrder !== h.sortOrder) patch.sortOrder = h.sortOrder;
     if (Object.keys(patch).length > 0) {
       await mutations.updateHolding({ id: h.id, patch });

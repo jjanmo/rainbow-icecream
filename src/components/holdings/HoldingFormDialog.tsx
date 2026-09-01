@@ -12,7 +12,20 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ASSET_TYPE_LABELS, type AssetType, type NewHolding, type Region } from '@/types/domain';
+import { deriveExposureRegion } from '@/lib/calc/axisRebalance';
+import {
+  ASSET_TYPE_LABELS,
+  type AssetType,
+  type ExposureRegion,
+  type NewHolding,
+  type Region,
+} from '@/types/domain';
+
+const EXPOSURE_ITEMS = [
+  { label: '한국', value: '한국' },
+  { label: '미국', value: '미국' },
+  { label: '기타 (국가 무관)', value: '기타' },
+];
 
 // 추가 모달은 최초 진입 시 아무것도 선택되지 않은 placeholder 상태로 열려야 하므로,
 // region/assetType도 (수정 모달과 달리) 빈 문자열을 잠깐 가질 수 있다 — 제출 시점엔
@@ -29,6 +42,7 @@ const EMPTY_DRAFT: Draft = {
   account: '',
   region: '',
   assetType: '',
+  exposureRegion: null,
   sortOrder: 0,
 };
 
@@ -53,6 +67,7 @@ function toDraft(holding: NewHolding): Draft {
     account: holding.account ?? '',
     region: holding.region,
     assetType: holding.assetType,
+    exposureRegion: holding.exposureRegion,
     sortOrder: holding.sortOrder,
   };
 }
@@ -199,7 +214,16 @@ export function HoldingFormDialog({
               <Select
                 items={REGION_ITEMS}
                 value={draft.region}
-                onValueChange={(v) => v && setDraft((d) => ({ ...d, region: v as Region }))}
+                onValueChange={(v) =>
+                  v &&
+                  setDraft((d) => ({
+                    ...d,
+                    region: v as Region,
+                    // 상장 지역을 바꾸면 실질 지역 기본값도 다시 파생한다 — 이후
+                    // 사용자가 "기타" 등으로 다시 덮어쓸 수 있다 (ADR-0058).
+                    exposureRegion: deriveExposureRegion(v as Region),
+                  }))
+                }
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="지역 선택" />
@@ -231,6 +255,33 @@ export function HoldingFormDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>
+              실질 지역 <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              items={EXPOSURE_ITEMS}
+              value={draft.region === '' ? '' : (draft.exposureRegion ?? '기타')}
+              onValueChange={(v) =>
+                v && setDraft((d) => ({ ...d, exposureRegion: v === '기타' ? null : (v as ExposureRegion) }))
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="지역을 먼저 선택하세요" />
+              </SelectTrigger>
+              <SelectContent>
+                {EXPOSURE_ITEMS.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              실제로 어느 시장에 노출되는지 — 예: 국내 상장 미국 ETF는 &ldquo;미국&rdquo;. 현금·채권·원자재는 &ldquo;기타&rdquo;.
+            </p>
           </div>
 
           <div className="flex gap-2.5">

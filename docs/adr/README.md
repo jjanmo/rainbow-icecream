@@ -63,6 +63,7 @@
 | [0055](./0055-fx-rate-source-architecture.md) | 환율 데이터 아키텍처 — 현재값은 Toss, 과거 확정값은 Frankfurter | Accepted |
 | [0056](./0056-merge-rebalance-into-portfolio.md) | "비중 체크" 페이지를 없애고 포트폴리오 화면에 흡수 | Accepted |
 | [0057](./0057-nullable-holding-group-id.md) | 소프트 삭제된 종목의 group_id를 null로 비움("미분류" 무한 재생성 버그 수정) | Accepted |
+| [0058](./0058-multi-axis-allocation-check.md) | 비중 체크 다축 확장 (① 시장 구현 / ③ 변동성 보류) | Accepted (① only) |
 
 ## 새 ADR 작성 형식
 

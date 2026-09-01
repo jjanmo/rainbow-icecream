@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   closestCenter,
   DndContext,
@@ -11,6 +11,8 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { toast } from "sonner";
+import { AxisAllocationView } from "@/components/portfolio/AxisAllocationView";
+import { AxisTabs, useAxisFromQuery } from "@/components/portfolio/AxisTabs";
 import { EditGroupCard } from "@/components/portfolio/EditGroupCard";
 import { GroupCard } from "@/components/portfolio/GroupCard";
 import { AllocationDonutChart } from "@/components/shared/AllocationDonutChart";
@@ -18,9 +20,11 @@ import { DataErrorNotice } from "@/components/shared/DataErrorNotice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAxisTargets, useSaveAxisTargets, targetsByBucket } from "@/hooks/useAxisTargets";
 import { useAddGroup, useDeleteGroup, useUpdateGroup } from "@/hooks/useGroups";
 import { useAddHolding, useDeleteHolding, useUpdateHolding } from "@/hooks/useHoldings";
 import { useRebalanceData } from "@/hooks/useRebalanceData";
+import { computeAxisRebalance, MARKET_BUCKETS, marketBucketOf } from "@/lib/calc/axisRebalance";
 import { groupColor } from "@/lib/calc/color";
 import { fmtPct, fmtWon } from "@/lib/format";
 import {
@@ -36,7 +40,10 @@ import {
 } from "@/lib/portfolioDraft";
 
 export default function SetupPage() {
+  const axis = useAxisFromQuery();
   const { data, prices, usdKrwRate, isLoading, isError, error } = useRebalanceData();
+  const axisTargetsQuery = useAxisTargets();
+  const saveAxisTargets = useSaveAxisTargets();
   const addGroup = useAddGroup();
   const updateGroup = useUpdateGroup();
   const deleteGroup = useDeleteGroup();
@@ -48,16 +55,39 @@ export default function SetupPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [draftGroups, setDraftGroups] = useState<DraftGroup[]>([]);
   const [draftHoldings, setDraftHoldings] = useState<DraftHolding[]>([]);
+  const [draftMarketTargets, setDraftMarketTargets] = useState<Record<string, number>>({});
   const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
+
+  const savedMarketTargets = useMemo(
+    () => targetsByBucket(axisTargetsQuery.data, "market"),
+    [axisTargetsQuery.data],
+  );
+
+  const marketResult = useMemo(() => {
+    if (!data) return undefined;
+    return computeAxisRebalance({
+      holdings: data.holdings,
+      buckets: MARKET_BUCKETS,
+      bucketOf: marketBucketOf,
+      targets: isEditing ? draftMarketTargets : savedMarketTargets,
+    });
+  }, [data, isEditing, draftMarketTargets, savedMarketTargets]);
 
   const targetSumOk = data ? Math.abs(data.targetSum - 100) < 0.5 : true;
   const draftTargetSum = draftGroups.reduce((sum, g) => sum + g.targetPct, 0);
   const draftTargetSumInvalid = Math.abs(draftTargetSum - 100) >= 0.5;
 
+  // 시장 축 목표는 "설정했을 때만" 100% 강제 — 전부 0이면 그 축을 안 쓰는 것으로 보고 완료를 막지 않는다.
+  const draftMarketSum = Object.values(draftMarketTargets).reduce((sum, n) => sum + n, 0);
+  const draftMarketSumInvalid = draftMarketSum > 0 && Math.abs(draftMarketSum - 100) >= 0.5;
+
   function startEditing() {
     if (!data) return;
     setDraftGroups(data.groups.map(toDraftGroup));
     setDraftHoldings(data.holdings.map(toDraftHolding));
+    setDraftMarketTargets(
+      Object.fromEntries(MARKET_BUCKETS.map((b) => [b.key, savedMarketTargets[b.key] ?? 0])),
+    );
     setIsEditing(true);
   }
 
@@ -65,6 +95,7 @@ export default function SetupPage() {
     setIsEditing(false);
     setDraftGroups([]);
     setDraftHoldings([]);
+    setDraftMarketTargets({});
   }
 
   async function finishEditing() {
@@ -85,9 +116,19 @@ export default function SetupPage() {
           deleteHolding: (id) => deleteHolding.mutateAsync(id),
         },
       });
+
+      // 시장 축 목표 — draft가 저장값과 다르면 통째로 교체한다 (ADR-0058).
+      const marketChanged = MARKET_BUCKETS.some(
+        (b) => (draftMarketTargets[b.key] ?? 0) !== (savedMarketTargets[b.key] ?? 0),
+      );
+      if (marketChanged) {
+        await saveAxisTargets.mutateAsync({ axis: "market", targets: draftMarketTargets });
+      }
+
       setIsEditing(false);
       setDraftGroups([]);
       setDraftHoldings([]);
+      setDraftMarketTargets({});
     } catch (err) {
       console.error("Failed to save portfolio setup", err);
       toast.error("저장 중 일부가 실패했습니다. 다시 시도해주세요.");
@@ -199,8 +240,12 @@ export default function SetupPage() {
                 <Button
                   type="button"
                   onClick={finishEditing}
-                  disabled={isSaving || draftTargetSumInvalid}
-                  title={draftTargetSumInvalid ? "자산군 목표 비중 합계가 100%가 아니면 완료할 수 없습니다" : undefined}
+                  disabled={isSaving || draftTargetSumInvalid || draftMarketSumInvalid}
+                  title={
+                    draftTargetSumInvalid || draftMarketSumInvalid
+                      ? "축별 목표 비중 합계가 100%가 아니면 완료할 수 없습니다"
+                      : undefined
+                  }
                 >
                   {isSaving ? "저장 중..." : "완료"}
                 </Button>
@@ -213,6 +258,11 @@ export default function SetupPage() {
                     : `100%까지 ${fmtPct(100 - draftTargetSum)} 부족합니다`}
                 </span>
               )}
+              {draftMarketSumInvalid && (
+                <span className="text-[11px] text-destructive">
+                  시장 목표 비중 합계가 {fmtPct(draftMarketSum)}입니다 (0 또는 100이어야 함)
+                </span>
+              )}
             </div>
           ) : (
             <Button type="button" variant="outline" onClick={startEditing}>
@@ -220,6 +270,8 @@ export default function SetupPage() {
             </Button>
           ))}
       </div>
+
+      <AxisTabs axis={axis} />
 
       {isError && <DataErrorNotice error={error} />}
 
@@ -229,6 +281,24 @@ export default function SetupPage() {
           <Skeleton className="h-40 w-full rounded-lg" />
           <Skeleton className="h-40 w-full rounded-lg" />
         </div>
+      ) : axis === "market" ? (
+        marketResult && (
+          <AxisAllocationView
+            result={marketResult}
+            isEditing={isEditing}
+            draftTargets={draftMarketTargets}
+            onDraftTargetChange={(bucket, pct) =>
+              setDraftMarketTargets((t) => ({ ...t, [bucket]: pct }))
+            }
+            note={
+              <p className="mb-4 text-xs text-muted-foreground">
+                상장 시장이 아니라 <span className="font-medium text-foreground">실질 익스포저</span> 기준입니다 —
+                국내 상장 미국 ETF는 &ldquo;미국&rdquo;, 현금·채권·원자재는 &ldquo;기타&rdquo;로 잡힙니다. 종목별
+                값은 보유 종목 화면에서 바꿉니다.
+              </p>
+            }
+          />
+        )
       ) : isEditing ? (
         <>
           <p className="mb-3 text-xs text-muted-foreground">

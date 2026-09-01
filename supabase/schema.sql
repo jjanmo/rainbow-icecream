@@ -393,3 +393,48 @@ create policy "own holdings" on holdings
     user_id = auth.uid()
     and (group_id is null or group_id in (select id from asset_groups where user_id = auth.uid()))
   );
+
+-- ---------------------------------------------------------------------------
+-- Migration: 비중 체크 시장 축 (ADR-0058 ①).
+-- holdings.exposure_region: 실질 익스포저 지역. nullable — null은 "특정 국가
+-- 익스포저가 아님"(현금·채권·원자재)을 뜻하고 시장 축에서 "기타" 버킷으로 집계된다.
+-- region(상장 시장·통화)과는 별개 개념이다. Idempotent.
+-- ---------------------------------------------------------------------------
+alter table holdings add column if not exists exposure_region text
+  check (exposure_region is null or exposure_region in ('한국', '미국'));
+
+-- 휴리스틱 백필 — region + 종목명으로 자동 분류. exposure_region이 이미 채워진
+-- 행은 건드리지 않으므로 여러 번 실행해도 안전하다(4번 update는 제외 — 항상
+-- 같은 결과라 무해).
+update holdings set exposure_region = '미국' where region = '해외' and exposure_region is null;
+update holdings set exposure_region = '미국'
+  where region = '국내' and exposure_region is null and (name ~ '미국|글로벌|나스닥|S&P|해외');
+update holdings set exposure_region = '한국' where region = '국내' and exposure_region is null;
+update holdings set exposure_region = null where asset_type in ('CASH', 'BOND');
+update holdings set exposure_region = null
+  where asset_type = 'ETF'
+    and (name ~ '국고채|국채|채권|Treasury' or name ~ '금속|광산|희소금속|희토류|원자재|골드|은 ETF');
+
+-- axis_targets: 시장 축의 버킷별 목표 비중. 자산군 축은 asset_groups.target_pct.
+-- (변동성 축은 분류 기준 미확정으로 보류 — ADR-0058 ③.)
+create table if not exists axis_targets (
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  axis text not null check (axis in ('market')),
+  bucket text not null,
+  target_pct numeric not null default 0 check (target_pct between 0 and 100),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, axis, bucket)
+);
+
+drop trigger if exists axis_targets_set_updated_at on axis_targets;
+create trigger axis_targets_set_updated_at
+  before update on axis_targets
+  for each row execute function set_updated_at();
+
+alter table axis_targets enable row level security;
+
+drop policy if exists "own axis targets" on axis_targets;
+create policy "own axis targets" on axis_targets
+  for all
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());

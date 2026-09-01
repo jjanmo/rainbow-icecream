@@ -16,10 +16,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useComboboxSearch } from '@/hooks/useComboboxSearch';
 import { cn } from '@/lib/utils';
+import { deriveExposureRegion } from '@/lib/calc/axisRebalance';
 import { computeExecutionAmount, currencyOf, normalizeQty } from '@/lib/journal/cost';
 import { fmtQty, fmtUsd, fmtWon } from '@/lib/format';
-import { ASSET_TYPE_LABELS, type AssetType, type Holding, type NewHolding, type Region } from '@/types/domain';
+import {
+  ASSET_TYPE_LABELS,
+  type AssetType,
+  type ExposureRegion,
+  type Holding,
+  type NewHolding,
+  type Region,
+} from '@/types/domain';
 import type { Execution, NewExecution, NewTradeNote, Side, TradeNote } from '@/types/journal';
+
+const EXPOSURE_ITEMS = [
+  { label: '한국', value: '한국' },
+  { label: '미국', value: '미국' },
+  { label: '기타', value: '기타' },
+];
 
 /** ExecutionFormDialog가 만드는 근거 초안. executionId는 아직 모른다(신규 체결의
  * id가 저장 후에야 확정) — journal.tsx가 채운다. */
@@ -60,6 +74,7 @@ interface NewHoldingDraft {
   region: Region;
   account: string;
   assetType: AssetType;
+  exposureRegion: ExposureRegion | null;
 }
 
 const EMPTY_NEW_HOLDING: Omit<NewHoldingDraft, 'groupId'> = {
@@ -68,6 +83,7 @@ const EMPTY_NEW_HOLDING: Omit<NewHoldingDraft, 'groupId'> = {
   region: '국내',
   account: '일반계좌',
   assetType: 'ETF',
+  exposureRegion: '한국',
 };
 
 const ASSET_TYPE_ITEMS = (Object.keys(ASSET_TYPE_LABELS) as AssetType[]).map((t) => ({
@@ -335,6 +351,7 @@ export function ExecutionFormDialog({
           account: newHolding.account,
           region: newHolding.region,
           assetType: newHolding.assetType,
+          exposureRegion: isCash ? null : newHolding.exposureRegion,
           sortOrder: 0,
         },
         execution,
@@ -459,7 +476,14 @@ export function ExecutionFormDialog({
                           { label: '해외', value: '해외' },
                         ]}
                         value={newHolding.region}
-                        onValueChange={(v) => v && setNewHolding((d) => ({ ...d, region: v as Region }))}
+                        onValueChange={(v) =>
+                          v &&
+                          setNewHolding((d) => ({
+                            ...d,
+                            region: v as Region,
+                            exposureRegion: deriveExposureRegion(v as Region),
+                          }))
+                        }
                       >
                         <SelectTrigger className="h-8 w-full text-xs">
                           <SelectValue />
@@ -467,6 +491,33 @@ export function ExecutionFormDialog({
                         <SelectContent>
                           <SelectItem value="국내">국내</SelectItem>
                           <SelectItem value="해외">해외</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex w-24 flex-col gap-1.5">
+                      <Label className="text-[11px]">
+                        실질 지역 <span className="text-destructive">*</span>
+                      </Label>
+                      <Select
+                        items={EXPOSURE_ITEMS}
+                        value={isCash ? '기타' : (newHolding.exposureRegion ?? '기타')}
+                        onValueChange={(v) =>
+                          v &&
+                          setNewHolding((d) => ({
+                            ...d,
+                            exposureRegion: v === '기타' ? null : (v as ExposureRegion),
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-full text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {EXPOSURE_ITEMS.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>
+                              {item.label}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
