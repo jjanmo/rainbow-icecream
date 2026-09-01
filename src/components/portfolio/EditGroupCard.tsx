@@ -97,7 +97,6 @@ export function EditGroupCard({
           variant="ghost"
           size="sm"
           onClick={onDelete}
-          title="자산군 삭제 시 하위 종목은 미분류로 이동합니다"
           className="shrink-0 text-muted-foreground"
         >
           삭제

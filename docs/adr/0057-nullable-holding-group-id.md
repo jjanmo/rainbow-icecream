@@ -1,7 +1,8 @@
 # ADR-0057: 소프트 삭제된 종목의 group_id를 null로 비운다
 
 ## Status
-Accepted
+Accepted — `group_id` nullable은 유지되나, "null = 소프트 삭제된 종목 전용"이라는
+좁힌 의미는 ADR-0059가 "어느 자산군에도 속하지 않음"(활성 종목 포함)으로 일반화함.
 
 ## Context
 

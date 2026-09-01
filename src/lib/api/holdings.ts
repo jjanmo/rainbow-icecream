@@ -1,6 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AssetType, ExposureRegion, Holding, NewHolding, Region } from "@/types/domain";
 
+/** 종목 수정 패치 — `groupId`는 null 허용(자산군 삭제/언분류, ADR-0059). 생성은
+ * 여전히 실제 그룹 필수라 `NewHolding.groupId`는 non-null 그대로다. */
+export type HoldingPatch = Partial<Omit<NewHolding, "groupId">> & { groupId?: string | null };
+
 interface HoldingRow {
   id: string;
   user_id: string;
@@ -98,7 +102,7 @@ export async function insertHolding(
 export async function updateHolding(
   supabase: SupabaseClient,
   id: string,
-  patch: Partial<NewHolding>,
+  patch: HoldingPatch,
 ): Promise<void> {
   const update: Record<string, unknown> = {};
   if (patch.groupId !== undefined) update.group_id = patch.groupId;
@@ -126,15 +130,3 @@ export async function deleteHolding(supabase: SupabaseClient, id: string): Promi
   if (error) throw error;
 }
 
-/** 그룹이 삭제될 때 이미 소프트 삭제된 종목들의 group_id를 지운다 —
- * `deleteGroup`(`lib/api/groups.ts`) 전용. 살아있지 않은 종목이라 다른 아무
- * 그룹으로 대신 옮겨봐야 의미가 없고, 오히려 실제로는 속한 적 없는 그룹을
- * 가리키는 거짓 데이터만 남는다 — `group_id`를 nullable로 둔 이유가 이 경우
- * 하나를 정확히 표현하기 위해서다. `updateHolding`은 일부러 이 경로를 안 막아준다
- * (`Partial<NewHolding>`의 groupId가 non-null로 좁혀져 있어 null을 못 넘김) —
- * 살아있는 종목의 group_id를 실수로 지우는 걸 타입 레벨에서 막기 위함. */
-export async function clearHoldingGroup(supabase: SupabaseClient, ids: string[]): Promise<void> {
-  if (ids.length === 0) return;
-  const { error } = await supabase.from("holdings").update({ group_id: null }).in("id", ids);
-  if (error) throw error;
-}

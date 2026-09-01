@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ResponsiveContainer, Tooltip, Treemap } from 'recharts';
 import { colorFor, hexToHue } from '@/lib/calc/color';
-import type { HoldingCalc } from '@/lib/calc/rebalance';
+import { UNGROUPED_KEY, type HoldingCalc } from '@/lib/calc/rebalance';
 import { fmtSigned, fmtWon, shortHoldingLabel } from '@/lib/format';
 
 // finviz류 시장 히트맵과 같은 채도를 내려면 앱 전역의 GOOD_COLOR(민트)/LOSS_COLOR보다
@@ -124,15 +124,17 @@ function buildHeatmapData(
   dailyChangeByTicker: Record<string, number>,
   isLoadingDailyChanges: boolean,
 ): HeatmapGroupNode[] {
-  // /holdings는 항상 active-only fetchHoldings() 결과만 다뤄서 groupId가 null일
-  // 일이 없다(소프트 삭제된 종목에만 null이 생김, lib/api/groups.ts's deleteGroup).
+  // active-only fetchHoldings() 결과지만 group_id가 null일 수 있다 — 자산군이
+  // 삭제된 미지정 종목(ADR-0059). groupName도 빈 문자열이라 여기서 "미지정"으로 표시한다.
   const byGroup = new Map<string, HeatmapGroupNode>();
   for (const h of holdings) {
     if (h.value <= 0) continue; // 트리맵 면적은 양수만 가능 — 수량 0인 종목 등은 제외
-    let group = byGroup.get(h.groupId!);
+    const groupKey = h.groupId ?? UNGROUPED_KEY;
+    const groupLabel = h.groupName || '미지정';
+    let group = byGroup.get(groupKey);
     if (!group) {
-      group = { name: h.groupName, groupId: h.groupId!, color: h.groupColor, children: [] };
-      byGroup.set(h.groupId!, group);
+      group = { name: groupLabel, groupId: groupKey, color: h.groupColor, children: [] };
+      byGroup.set(groupKey, group);
     }
     // ticker가 없는 현금성 자산은 시세 자체가 없어 등락도 없다(항상 중립) — API 조회 대상이 아니다.
     const changePct = h.ticker === null ? 0 : dailyChangeByTicker[h.ticker];
@@ -147,8 +149,8 @@ function buildHeatmapData(
       pending,
       unavailable,
       value: h.value,
-      groupName: h.groupName,
-      groupId: h.groupId!,
+      groupName: groupLabel,
+      groupId: groupKey,
       groupColor: h.groupColor,
       isFirstInGroup: false,
     });

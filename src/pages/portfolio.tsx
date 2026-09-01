@@ -15,6 +15,7 @@ import { AxisAllocationView } from "@/components/portfolio/AxisAllocationView";
 import { AxisTabs, useAxisFromQuery } from "@/components/portfolio/AxisTabs";
 import { EditGroupCard } from "@/components/portfolio/EditGroupCard";
 import { GroupCard } from "@/components/portfolio/GroupCard";
+import { UngroupedHoldingsCard } from "@/components/portfolio/UngroupedHoldingsCard";
 import { AllocationDonutChart } from "@/components/shared/AllocationDonutChart";
 import { DataErrorNotice } from "@/components/shared/DataErrorNotice";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ import { useAddHolding, useDeleteHolding, useUpdateHolding } from "@/hooks/useHo
 import { useRebalanceData } from "@/hooks/useRebalanceData";
 import { computeAxisRebalance, MARKET_BUCKETS, marketBucketOf } from "@/lib/calc/axisRebalance";
 import { groupColor } from "@/lib/calc/color";
+import { UNGROUPED_KEY } from "@/lib/calc/rebalance";
 import { fmtPct, fmtWon } from "@/lib/format";
 import {
   commitPortfolioDraft,
@@ -77,7 +79,7 @@ export default function SetupPage() {
   const draftTargetSum = draftGroups.reduce((sum, g) => sum + g.targetPct, 0);
   const draftTargetSumInvalid = Math.abs(draftTargetSum - 100) >= 0.5;
 
-  // 시장 축 목표는 "설정했을 때만" 100% 강제 — 전부 0이면 그 축을 안 쓰는 것으로 보고 완료를 막지 않는다.
+  // 시장·변동성 축 목표는 "설정했을 때만" 100% 강제 — 전부 0이면 그 축을 안 쓰는 것으로 보고 완료를 막지 않는다.
   const draftMarketSum = Object.values(draftMarketTargets).reduce((sum, n) => sum + n, 0);
   const draftMarketSumInvalid = draftMarketSum > 0 && Math.abs(draftMarketSum - 100) >= 0.5;
 
@@ -117,7 +119,7 @@ export default function SetupPage() {
         },
       });
 
-      // 시장 축 목표 — draft가 저장값과 다르면 통째로 교체한다 (ADR-0058).
+      // 시장·변동성 축 목표 — draft가 저장값과 다르면 통째로 교체한다 (ADR-0058).
       const marketChanged = MARKET_BUCKETS.some(
         (b) => (draftMarketTargets[b.key] ?? 0) !== (savedMarketTargets[b.key] ?? 0),
       );
@@ -143,7 +145,11 @@ export default function SetupPage() {
 
   function deleteDraftGroup(clientKey: string) {
     setDraftGroups((groups) => groups.filter((g) => g.clientKey !== clientKey));
-    setDraftHoldings((holdings) => holdings.filter((h) => h.groupClientKey !== clientKey));
+    // 종목은 지우지 않고 "미지정"으로 보낸다 (ADR-0035/0059) — 바로 아래 미지정
+    // 목록에 나타나서 다른 자산군으로 드래그해 재배정할 수 있다.
+    setDraftHoldings((holdings) =>
+      holdings.map((h) => (h.groupClientKey === clientKey ? { ...h, groupClientKey: UNGROUPED_KEY } : h)),
+    );
   }
 
   function addDraftGroup() {
@@ -220,6 +226,15 @@ export default function SetupPage() {
   }
 
   const sortedDraftGroups = [...draftGroups].sort((a, b) => a.sortOrder - b.sortOrder);
+  const ungroupedDraftHoldings = draftHoldings
+    .filter((h) => h.groupClientKey === UNGROUPED_KEY)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  // 읽기 모드용 — 자산군 미지정(group_id null) 종목 요약. computeRebalance는 이들을
+  // 어떤 그룹에도 안 넣으므로 그룹 비중 합이 100% 미만이 될 수 있다 (ADR-0059).
+  const ungroupedHoldings = (data?.holdings ?? []).filter((h) => h.groupId === null);
+  const ungroupedCount = ungroupedHoldings.length;
+  const ungroupedValue = ungroupedHoldings.reduce((sum, h) => sum + h.value, 0);
 
   return (
     <div>
@@ -330,6 +345,15 @@ export default function SetupPage() {
                 />
               ))}
             </SortableContext>
+
+            {ungroupedDraftHoldings.length > 0 && (
+              <UngroupedHoldingsCard
+                holdings={ungroupedDraftHoldings}
+                ungroupedKey={UNGROUPED_KEY}
+                prices={prices}
+                usdKrwRate={usdKrwRate}
+              />
+            )}
           </DndContext>
 
           <Button
@@ -397,6 +421,13 @@ export default function SetupPage() {
           {data.groups.map((group) => (
             <GroupCard key={group.id} group={group} />
           ))}
+
+          {ungroupedValue > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              자산군 미지정 종목 {ungroupedCount}개 ({fmtWon(ungroupedValue)}) — 위 비중에는 포함되지 않습니다. 수정에서
+              자산군에 배정하세요.
+            </p>
+          )}
         </>
       )}
     </div>

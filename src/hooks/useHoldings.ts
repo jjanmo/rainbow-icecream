@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { deleteHolding, fetchAllHoldings, fetchHoldings, insertHolding, updateHolding } from "@/lib/api/holdings";
+import {
+  deleteHolding,
+  fetchAllHoldings,
+  fetchHoldings,
+  insertHolding,
+  updateHolding,
+  type HoldingPatch,
+} from "@/lib/api/holdings";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { NewHolding } from "@/types/domain";
 
@@ -41,7 +48,7 @@ export function useAddHolding() {
 export function useUpdateHolding() {
   const invalidate = useInvalidateHoldings();
   return useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: Partial<NewHolding> }) =>
+    mutationFn: ({ id, patch }: { id: string; patch: HoldingPatch }) =>
       updateHolding(getSupabaseBrowserClient(), id, patch),
     onSuccess: invalidate,
   });

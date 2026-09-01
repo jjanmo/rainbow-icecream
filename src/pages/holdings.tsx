@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useDailyReturns } from '@/hooks/useDailyReturns';
 import { useAddHolding, useDeleteHolding, useUpdateHolding } from '@/hooks/useHoldings';
 import { useRebalanceData } from '@/hooks/useRebalanceData';
+import { UNGROUPED_KEY } from '@/lib/calc/rebalance';
 import type { Holding, NewHolding } from '@/types/domain';
 import { cn } from '@/lib/utils';
 
@@ -41,7 +42,8 @@ export default function HoldingsPage() {
     if (!data) return [];
     return data.holdings.filter(
       (h) =>
-        (filter.groupId === 'all' || h.groupId === filter.groupId) &&
+        (filter.groupId === 'all' ||
+          (filter.groupId === UNGROUPED_KEY ? h.groupId === null : h.groupId === filter.groupId)) &&
         (filter.account === 'all' || h.account === filter.account) &&
         (filter.region === 'all' || h.region === filter.region),
     );
@@ -54,6 +56,15 @@ export default function HoldingsPage() {
   const dailyReturnsQuery = useDailyReturns(heatmapTickers, view === 'heatmap');
 
   const groupOptions = useMemo(() => data?.groups.map((g) => ({ id: g.id, name: g.name })) ?? [], [data]);
+  // 필터 전용 — 미지정(group_id null) 종목이 있으면 옵션 하나 더. 종목 폼에는 안 넘긴다
+  // (미지정으로 새로 만들거나 배정할 수는 없음).
+  const filterGroupOptions = useMemo(
+    () =>
+      (data?.holdings ?? []).some((h) => h.groupId === null)
+        ? [...groupOptions, { id: UNGROUPED_KEY, name: '미지정' }]
+        : groupOptions,
+    [data, groupOptions],
+  );
 
   const accountOptions = useMemo(() => {
     const values = (data?.holdings ?? []).map((h) => h.account).filter((a): a is string => !!a && a.trim().length > 0);
@@ -100,7 +111,7 @@ export default function HoldingsPage() {
             <HoldingsFilterBar
               filter={filter}
               onChange={setFilter}
-              groupOptions={groupOptions}
+              groupOptions={filterGroupOptions}
               accountOptions={accountOptions}
             />
             <span className="shrink-0 text-xs text-muted-foreground">총 {filteredHoldings.length}개 종목</span>

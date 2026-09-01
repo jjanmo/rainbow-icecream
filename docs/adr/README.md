@@ -64,6 +64,7 @@
 | [0056](./0056-merge-rebalance-into-portfolio.md) | "비중 체크" 페이지를 없애고 포트폴리오 화면에 흡수 | Accepted |
 | [0057](./0057-nullable-holding-group-id.md) | 소프트 삭제된 종목의 group_id를 null로 비움("미분류" 무한 재생성 버그 수정) | Accepted |
 | [0058](./0058-multi-axis-allocation-check.md) | 비중 체크 다축 확장 (① 시장 구현 / ③ 변동성 보류) | Accepted (① only) |
+| [0059](./0059-unclassified-as-null-group.md) | "미분류"를 실제 그룹이 아니라 group_id=null로 표현 | Accepted |
 
 ## 새 ADR 작성 형식
 

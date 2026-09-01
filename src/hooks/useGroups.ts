@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deleteGroup, fetchGroups, insertGroup, updateGroup } from "@/lib/api/groups";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { NewAssetGroup } from "@/types/domain";
-import { holdingsQueryKey } from "./useHoldings";
+import { allHoldingsQueryKey, holdingsQueryKey } from "./useHoldings";
 
 export const groupsQueryKey = ["groups"] as const;
 
@@ -36,8 +36,9 @@ export function useDeleteGroup() {
     mutationFn: (id: string) => deleteGroup(getSupabaseBrowserClient(), id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: groupsQueryKey });
-      // deleting a group cascades to its holdings in the DB (on delete cascade)
+      // 자산군을 지우면 소속 종목의 group_id가 null이 된다 (ADR-0059) — 활성/전체 둘 다 갱신.
       queryClient.invalidateQueries({ queryKey: holdingsQueryKey });
+      queryClient.invalidateQueries({ queryKey: allHoldingsQueryKey });
     },
   });
 }

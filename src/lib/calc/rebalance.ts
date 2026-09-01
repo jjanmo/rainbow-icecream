@@ -59,12 +59,21 @@ export interface GroupCalc extends AssetGroup {
 }
 
 export interface RebalanceResult {
-  /** Display order (sort_order, created_at, id) — same as /portfolio shows. */
+  /** Display order (sort_order, created_at, id) — same as /portfolio shows.
+   * 실제 자산군만 — `group_id`가 null인(= 어느 자산군에도 안 속한) 종목은 여기
+   * 어디에도 안 들어간다. 그래서 그룹 %의 합이 100% 미만일 수 있다 (ADR-0059).
+   * 미지정 종목은 `holdings`에는 그대로 들어있고(groupName은 빈 문자열),
+   * `/portfolio` 편집 모드의 "자산군 미지정" 목록에서만 별도로 다룬다. */
   groups: GroupCalc[];
   holdings: HoldingCalc[];
   totalValue: number;
   targetSum: number;
 }
+
+/** `group_id`가 null인 종목을 draft·dnd 레이어에서 가리키는 센티널 키 — 실제
+ * 자산군 id와 절대 안 겹친다 (합성 "그룹"을 만드는 게 아니라, 그냥 "미지정"을
+ * 뜻하는 키). */
+export const UNGROUPED_KEY = "__ungrouped__";
 
 export interface ComputeRebalanceInput {
   groups: AssetGroup[];
@@ -146,22 +155,23 @@ export function computeRebalance({
 
   const totalValue = holdingsStable.reduce((sum, h) => sum + (resolvedPrices.get(h.id)?.value ?? 0), 0);
 
-  // holdings is always the active-only fetchHoldings() result here (/portfolio,
-  // /holdings) — groupId is only ever null on a soft-deleted holding
-  // (lib/api/groups.ts's deleteGroup), which never appears in that query.
+  // active-only holdings 이지만 group_id가 null일 수 있다 — 자산군이 삭제됐고
+  // 아직 다른 자산군에 배정 안 된 "미지정" 종목 (ADR-0059). 그런 종목은 어떤
+  // 그룹에도 안 들어가고, groupName은 빈 문자열이 된다.
   const groupValue = new Map<string, number>();
   holdingsStable.forEach((h) => {
     const value = resolvedPrices.get(h.id)?.value ?? 0;
-    groupValue.set(h.groupId!, (groupValue.get(h.groupId!) ?? 0) + value);
+    const key = h.groupId ?? UNGROUPED_KEY;
+    groupValue.set(key, (groupValue.get(key) ?? 0) + value);
   });
 
   const holdingsCalc: HoldingCalc[] = holdingsStable.map((h) => {
-    const group = groupById.get(h.groupId!);
-    const groupIndex = groupIndexById.get(h.groupId!) ?? 0;
+    const group = h.groupId ? groupById.get(h.groupId) : undefined;
+    const groupIndex = h.groupId ? (groupIndexById.get(h.groupId) ?? 0) : 0;
     const hue = hueForGroupIndex(groupIndex, sortedGroups.length);
     const { priceNative, nativeCurrency, priceKrw, value, valueNative, hasLivePrice } = resolvedPrices.get(h.id)!;
     const actualPct = totalValue > 0 ? (value / totalValue) * 100 : 0;
-    const gValue = groupValue.get(h.groupId!) ?? 0;
+    const gValue = groupValue.get(h.groupId ?? UNGROUPED_KEY) ?? 0;
     const actualPctInGroup = gValue > 0 ? (value / gValue) * 100 : 0;
     // Compared in the holding's own native currency (not priceKrw) so a
     // 해외 holding's return isn't distorted by FX movement since purchase —
@@ -170,7 +180,9 @@ export function computeRebalance({
 
     return {
       ...h,
-      groupName: group?.name ?? "미분류",
+      // 미지정 종목은 빈 문자열 — /holdings 표의 자산군 칸이 그대로 비어 보인다.
+      // (그룹으로 묶을 필요가 있는 곳, 예: 히트맵은 자체적으로 "미지정" 폴백을 쓴다.)
+      groupName: group?.name ?? "",
       groupColor: group ? colorFor(hue, 0) : "oklch(70% 0 0)",
       priceNative,
       nativeCurrency,
@@ -186,9 +198,10 @@ export function computeRebalance({
 
   const holdingsByGroup = new Map<string, HoldingCalc[]>();
   holdingsCalc.forEach((h) => {
-    const arr = holdingsByGroup.get(h.groupId!) ?? [];
+    const key = h.groupId ?? UNGROUPED_KEY;
+    const arr = holdingsByGroup.get(key) ?? [];
     arr.push(h);
-    holdingsByGroup.set(h.groupId!, arr);
+    holdingsByGroup.set(key, arr);
   });
 
   const groupsCalc: GroupCalc[] = sortedGroups.map((g, index) => {

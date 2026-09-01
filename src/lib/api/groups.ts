@@ -1,5 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { clearHoldingGroup } from "@/lib/api/holdings";
 import type { AssetGroup, NewAssetGroup } from "@/types/domain";
 
 interface GroupRow {
@@ -65,69 +64,22 @@ export async function updateGroup(
   if (error) throw error;
 }
 
-/** Group name holdings land in when their own group is deleted. Found by name
- * (no dedicated flag column needed) — see findOrCreateUnclassifiedGroup. */
-const UNCLASSIFIED_GROUP_NAME = "미분류";
-
 /**
- * Finds this user's "미분류" group, creating one if it doesn't exist yet.
- * `excludeId` skips a candidate with that id — needed when deleting a group
- * that happens to already be named "미분류" itself, so reassignment doesn't
- * just point holdings back at the group about to be deleted.
- */
-async function findOrCreateUnclassifiedGroup(supabase: SupabaseClient, excludeId?: string): Promise<string> {
-  let query = supabase.from("asset_groups").select("id").eq("name", UNCLASSIFIED_GROUP_NAME).limit(1);
-  if (excludeId) query = query.neq("id", excludeId);
-  const { data: existing, error: findError } = await query.maybeSingle();
-  if (findError) throw findError;
-  if (existing) return existing.id;
-
-  const { data: created, error: createError } = await supabase
-    .from("asset_groups")
-    .insert({ name: UNCLASSIFIED_GROUP_NAME, target_pct: 0, sort_order: 0 })
-    .select("id")
-    .single();
-  if (createError) throw createError;
-  return created.id;
-}
-
-/**
- * 자산군을 삭제해도 그 안의 종목은 지우지 않는다 — 살아있는 종목은 "미분류"
- * 자산군으로 옮긴다(find-or-create). `holdings.group_id`의 FK가
- * `on delete restrict`라 재배정 없이 delete만 하면 그대로 실패한다.
+ * 자산군을 삭제해도 그 안의 종목은 지우지 않는다 (ADR-0035). 종목의 `group_id`를
+ * null로 비운다 — 활성/소프트삭제 구분 없이 전부. `group_id = null`의 의미는
+ * "어떤 자산군에도 속하지 않음" 하나로 통일돼 있고(ADR-0059), 종목 소프트 삭제와
+ * 자산군 삭제 두 경로가 모두 여기로 온다.
  *
- * 소프트 삭제된 종목만 남아있어도 그 group_id는 여전히 이 그룹을 가리키고
- * 있어 FK가 걸린다 — 하지만 "미분류"로 보내지 않고 group_id를 null로 비운다
- * (`clearHoldingGroup`, `holdings.group_id`를 nullable로 둔 이유가 이 경우
- * 하나를 정확히 표현하기 위해서다). 예전엔 살아있는지 여부와 무관하게 무조건
- * "미분류"로 보냈는데, 그러면 (a) 실제로는 속한 적 없는 그룹을 죽은 종목이
- * 계속 가리키는 거짓 데이터가 남고, (b) "미분류" 자신을 지울 때도 그 안의
- * 죽은 종목이 똑같이 걸려서 새 "미분류"를 또 만들어내는 무한 재생성 버그가
- * 있었다(실제 재현됨 — 사용자가 "미분류"를 지워도 지워도 자동으로 다시
- * 생긴다고 보고함). null이면 어느 그룹을 지우든 죽은 종목이 다시 걸릴 일
- * 자체가 없다.
+ * `holdings.group_id`의 FK가 `on delete restrict`라 null로 비우기 전에 delete만
+ * 하면 실패한다 — 그래서 update가 먼저다. 예전엔 실제 "미분류" 그룹을
+ * find-or-create해서 활성 종목을 거기로 옮겼는데(ADR-0035/0057), "미분류" 자신을
+ * 지우면 그 종목들이 갈 데가 없어 새 "미분류"가 끝없이 재생성되는 버그가 있었다.
+ * 실제 그룹 row를 아예 없애니 그 문제가 원천적으로 사라진다 — "미분류"는 이제
+ * `computeRebalance`가 group_id null 종목을 묶어 만드는 합성 버킷일 뿐이다.
  */
 export async function deleteGroup(supabase: SupabaseClient, id: string): Promise<void> {
-  const { data: members, error: fetchError } = await supabase
-    .from("holdings")
-    .select("id, deleted_at")
-    .eq("group_id", id);
-  if (fetchError) throw fetchError;
-
-  if (members && members.length > 0) {
-    const activeIds = members.filter((m) => m.deleted_at === null).map((m) => m.id);
-    const deadIds = members.filter((m) => m.deleted_at !== null).map((m) => m.id);
-
-    if (activeIds.length > 0) {
-      const unclassifiedId = await findOrCreateUnclassifiedGroup(supabase, id);
-      const { error: reassignError } = await supabase
-        .from("holdings")
-        .update({ group_id: unclassifiedId })
-        .in("id", activeIds);
-      if (reassignError) throw reassignError;
-    }
-    await clearHoldingGroup(supabase, deadIds);
-  }
+  const { error: clearError } = await supabase.from("holdings").update({ group_id: null }).eq("group_id", id);
+  if (clearError) throw clearError;
 
   const { error } = await supabase.from("asset_groups").delete().eq("id", id);
   if (error) throw error;

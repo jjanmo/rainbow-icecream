@@ -395,7 +395,7 @@ create policy "own holdings" on holdings
   );
 
 -- ---------------------------------------------------------------------------
--- Migration: 비중 체크 시장 축 (ADR-0058 ①).
+-- Migration: 비중 체크 3축(시장/자산군/변동성) — ① 시장 축 (ADR-0058).
 -- holdings.exposure_region: 실질 익스포저 지역. nullable — null은 "특정 국가
 -- 익스포저가 아님"(현금·채권·원자재)을 뜻하고 시장 축에서 "기타" 버킷으로 집계된다.
 -- region(상장 시장·통화)과는 별개 개념이다. Idempotent.
@@ -438,3 +438,17 @@ create policy "own axis targets" on axis_targets
   for all
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
+
+-- ---------------------------------------------------------------------------
+-- Migration: "미분류"를 실제 그룹 row가 아니라 group_id IS NULL 로 표현 (ADR-0059).
+-- ADR-0035/0057이 쓰던 find-or-create "미분류" 그룹을 없앤다. group_id = null 의
+-- 의미는 "어떤 자산군에도 속하지 않음" 하나로 통일된다 — 종목 소프트 삭제,
+-- 자산군 삭제 두 경로 모두 여기로 온다. deleteGroup(lib/api/groups.ts)은 이제
+-- 소속 종목을 전부 group_id = null 로 비우고 그룹을 지운다. Idempotent.
+-- ---------------------------------------------------------------------------
+update holdings set group_id = null
+  where group_id in (select id from asset_groups where name = '미분류');
+
+delete from asset_groups where name = '미분류'
+  and not exists (select 1 from holdings h where h.group_id = asset_groups.id);
+

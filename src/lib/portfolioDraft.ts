@@ -1,3 +1,5 @@
+import type { HoldingPatch } from "@/lib/api/holdings";
+import { UNGROUPED_KEY } from "@/lib/calc/rebalance";
 import type {
   AssetGroup,
   AssetType,
@@ -28,7 +30,8 @@ export interface DraftHolding {
   clientKey: string;
   id: string | null;
   /** References a DraftGroup.clientKey, not a real group id — the group
-   * itself may also be new and not have a real id yet. */
+   * itself may also be new and not have a real id yet. `UNGROUPED_KEY`면
+   * 어느 자산군에도 안 속한 상태(커밋 시 group_id = null, ADR-0059). */
   groupClientKey: string;
   ticker: string | null;
   name: string;
@@ -47,13 +50,13 @@ export function toDraftGroup(g: AssetGroup): DraftGroup {
   return { clientKey: g.id, id: g.id, name: g.name, targetPct: g.targetPct, sortOrder: g.sortOrder };
 }
 
-// /portfolio only ever drafts from the active-only fetchHoldings() result, so
-// h.groupId is never null here (only a soft-deleted holding can have one).
+// active-only fetchHoldings() 결과지만 h.groupId가 null일 수 있다 — 자산군이
+// 삭제된 미지정 종목(ADR-0059). 그 경우 UNGROUPED_KEY로 표시한다.
 export function toDraftHolding(h: Holding): DraftHolding {
   return {
     clientKey: h.id,
     id: h.id,
-    groupClientKey: h.groupId!,
+    groupClientKey: h.groupId ?? UNGROUPED_KEY,
     ticker: h.ticker,
     name: h.name,
     targetPctInGroup: h.targetPctInGroup,
@@ -122,7 +125,7 @@ export interface PortfolioDraftMutations {
   updateGroup: (input: { id: string; patch: Partial<NewAssetGroup> }) => Promise<unknown>;
   deleteGroup: (id: string) => Promise<unknown>;
   addHolding: (holding: NewHolding) => Promise<Holding>;
-  updateHolding: (input: { id: string; patch: Partial<NewHolding> }) => Promise<unknown>;
+  updateHolding: (input: { id: string; patch: HoldingPatch }) => Promise<unknown>;
   deleteHolding: (id: string) => Promise<unknown>;
 }
 
@@ -158,9 +161,10 @@ export async function commitPortfolioDraft({
     await mutations.deleteGroup(id);
   }
 
-  // 2. Deleted holdings, excluding ones already gone via a deleted group.
+  // 2. Deleted holdings — draft에서 사라진 것들. 자산군 삭제로 group_id가 null이
+  //    된 종목은 draft에 계속 남아있으므로(미지정 목록) 여기 안 걸린다.
   const deletedHoldings = originalHoldings.filter(
-    (h) => !draftHoldingIds.has(h.id) && !deletedGroupIds.has(h.groupId!),
+    (h) => !draftHoldingIds.has(h.id) && !(h.groupId !== null && deletedGroupIds.has(h.groupId)),
   );
   for (const h of deletedHoldings) {
     await mutations.deleteHolding(h.id);
@@ -218,8 +222,9 @@ export async function commitPortfolioDraft({
     if (h.id === null) continue;
     const original = originalHoldingById.get(h.id);
     if (!original) continue;
-    const resolvedGroupId = clientKeyToGroupId.get(h.groupClientKey) ?? h.groupClientKey;
-    const patch: Partial<NewHolding> = {};
+    const resolvedGroupId =
+      h.groupClientKey === UNGROUPED_KEY ? null : (clientKeyToGroupId.get(h.groupClientKey) ?? h.groupClientKey);
+    const patch: HoldingPatch = {};
     if (original.groupId !== resolvedGroupId) patch.groupId = resolvedGroupId;
     if (original.ticker !== h.ticker) patch.ticker = h.ticker;
     if (original.name !== h.name) patch.name = h.name;
