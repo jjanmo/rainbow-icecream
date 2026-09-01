@@ -32,6 +32,8 @@ App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/li
 
 ## Multi-axis 비중 체크 (자산군/시장) — ADR-0058
 - **비중 체크는 2개 축**(자산군/시장)이고 `/portfolio`에서 `?axis=group|market` URL 쿼리 + plain 세그먼트 버튼(`components/portfolio/AxisTabs.tsx`, ADR-0051 패턴 — Tabs 프리미티브 아님)으로 전환한다. 편집 모드(수정/취소/완료)와 draft는 페이지 전역 하나 — 탭을 오가며 두 축 목표를 다 고치고 한 번에 커밋한다.
+- **변동성 축(공격/중립/방어)은 만들었다가 뺐다** — σ 절대 임계값 방식이 주식 위주 포트폴리오에 안 맞아서(SCHD가 중립 등) **분류 기준이 아직 안 정해짐**. 관련 코드(`useRiskMetrics`, `lib/calc/risk.ts`, `RiskSummary`, `tossHistoryProvider`, `price_daily`, `/api/toss/history`) 전부 삭제. 재도입은 ADR-0058 ③ + 이 프로젝트의 열린 질문 참고 — git 기록에서 되살릴 수 있다.
+- **섹터/테마 분류(`holdings.sector`)도 만들었다가 뺐다** (ADR-0060 withdrawn) — 자산군을 펼쳤을 때 그 안(엣지)에서 섹터별 소계를 보여주는 화면을 스펙아웃하기로 해서, 컬럼·타입·폼 Select 전부 제거. 재도입은 git 기록에서.
 - **축 ① 시장** (구현됨): `holdings.exposure_region` (`Holding.exposureRegion: "한국" | "미국" | null`, ADR-0058). `region`(상장 시장·통화)과 **다른 개념** — 실질 익스포저 지역이다. `null` = "특정 국가 익스포저 아님"(현금·채권·원자재) → 시장 축에서 "기타" 버킷. 종목 폼 2곳(`HoldingFormDialog`, `ExecutionFormDialog`의 "+ 새 종목")에 "실질 지역" Select 있음 — 기본값은 `deriveExposureRegion(region)`(`lib/calc/axisRebalance.ts`, 국내→한국/해외→미국), 사용자가 KRX 상장 미국 ETF·현금성일 때 바꾼다. `한국/미국` 2개만인 건 의도적(글로벌 버킷·per-holding us_weight 기각) — 일본/중국/인도 등 실제 투자 시 확장.
 - **축 ② 자산군**: 현행 그대로. `bucketOf = group_id`, 목표는 `asset_groups.target_pct`.
 - **`computeAxisRebalance`** (`lib/calc/axisRebalance.ts`) — `computeRebalance`의 `GroupCalc`를 일반화한 것. `bucketOf`(null이면 축에서 제외)와 `targets` Record만 바꿔 시장 축(그리고 나중에 다른 축)을 같은 계산식으로 굴린다. `diff`/`actionAmount` 부호·색 규칙은 `GroupCalc`과 동일 → `diffColor` 재사용. `AxisAllocationView`(`components/portfolio/AxisAllocationView.tsx`)가 도넛 2개 + 버킷 행 + 펼침 종목 목록을 렌더.
