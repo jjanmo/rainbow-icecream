@@ -1,7 +1,7 @@
 # ADR-0047: 자산종류를 필수값으로, 표기·라벨 다듬기
 
 ## Status
-Partially superseded by [ADR-0050](./0050-opening-balance-new-holding-only.md) — "매매일지의 새 종목 흐름은 자산종류를 안 물어보고 기본값 ETF로 만든다"는 부분이 뒤집혔다(이제 그 흐름에서도 자산종류를 직접 고른다). 필수값·라벨 자체는 그대로다.
+Partially superseded by [ADR-0050](./0050-opening-balance-new-holding-only.md) — "매매일지의 새 종목 흐름은 자산종류를 안 물어보고 기본값 ETF로 만든다"는 부분이 뒤집혔다(이제 그 흐름에서도 자산종류를 직접 고른다). 필수값 자체는 그대로다. 아래 라벨 표는 [ADR-0061](./0061-asset-type-account-option-revision.md)에서 다시 바뀌었다(REIT 제거, GOLD 추가, STOCK/FUND/CASH 라벨 수정) — 최신 값은 `src/types/domain.ts`의 `ASSET_TYPE_LABELS` 참고.
 
 ## Context
 

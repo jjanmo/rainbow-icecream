@@ -39,7 +39,7 @@ const EXPOSURE_ITEMS = [
  * id가 저장 후에야 확정) — journal.tsx가 채운다. */
 export type ExecutionNoteDraft = Omit<NewTradeNote, 'executionId'>;
 
-const ACCOUNT_TYPES = ['일반계좌', 'ISA', '연금저축', 'IRP', 'CMA', '파킹통장', '예적금', '기타'];
+const ACCOUNT_TYPES = ['일반계좌', 'ISA', '연금저축', 'DC', 'IRP', '기타'];
 
 /** `datetime-local` 값(로컬 시간, 초 없음) ↔ ISO8601(UTC) 변환. */
 function toLocalInputValue(iso: string): string {

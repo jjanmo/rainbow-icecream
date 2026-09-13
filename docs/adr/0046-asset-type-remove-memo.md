@@ -1,7 +1,7 @@
 # ADR-0046: 자산타입 필드 추가, 비고(메모) 필드 제거
 
 ## Status
-Partially superseded by [ADR-0047](./0047-asset-type-required-labels.md) — 선택 입력이었던 자산타입은 필수값(기본 ETF)으로 바뀌었고, 화면 표기도 "자산종류"로, STOCK 라벨도 "개별 주식"으로 바뀌었다. 비고(메모) 제거는 그대로 유지된다.
+Partially superseded by [ADR-0047](./0047-asset-type-required-labels.md) — 선택 입력이었던 자산타입은 필수값(기본 ETF)으로 바뀌었고, 화면 표기도 "자산종류"로, STOCK 라벨도 "개별 주식"으로 바뀌었다. 값 목록 자체는 [ADR-0061](./0061-asset-type-account-option-revision.md)에서 REIT 제거·GOLD 추가로 다시 바뀌었다. 비고(메모) 제거는 그대로 유지된다.
 
 ## Context
 

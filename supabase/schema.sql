@@ -38,8 +38,8 @@ create table if not exists holdings (
   account text,
   region text not null default '국내' check (region in ('국내', '해외')),
   /** 상품 자체의 고정된 분류 — 사용자가 설정하는 자산군(전략별 그룹)과는 별개다.
-   * 필수값, 기본값 ETF (ADR-0047). */
-  asset_type text not null default 'ETF' check (asset_type in ('STOCK', 'ETF', 'ETN', 'REIT', 'FUND', 'BOND', 'CASH')),
+   * 필수값, 기본값 ETF (ADR-0047). REIT 제거·GOLD 추가는 ADR-0061. */
+  asset_type text not null default 'ETF' check (asset_type in ('STOCK', 'ETF', 'ETN', 'FUND', 'BOND', 'GOLD', 'CASH')),
   sort_order int not null default 0,
   /** soft delete — hard delete would cascade through executions/trade_notes and
    * permanently lose that history, even though re-buying the same holding later
@@ -451,4 +451,17 @@ update holdings set group_id = null
 
 delete from asset_groups where name = '미분류'
   and not exists (select 1 from holdings h where h.group_id = asset_groups.id);
+
+-- ---------------------------------------------------------------------------
+-- Migration: 자산종류 옵션에서 리츠(REIT) 제거, 금현물(GOLD) 추가 (ADR-0061).
+-- 계좌는 CHECK 제약이 없는 자유 텍스트라 스키마 변경은 필요 없다 — 파킹통장/
+-- 예적금 값은 여기서 일반계좌로 재분류만 한다(옵션에서 CMA/파킹통장/예적금 제거,
+-- DC 추가는 화면 드롭다운만 바뀐다). Idempotent.
+-- ---------------------------------------------------------------------------
+update holdings set asset_type = 'STOCK' where ticker = '395400' and asset_type = 'REIT'; -- SK리츠
+update holdings set account = '일반계좌' where account in ('파킹통장', '예적금');
+
+alter table holdings drop constraint if exists holdings_asset_type_check;
+alter table holdings add constraint holdings_asset_type_check
+  check (asset_type is null or asset_type in ('STOCK', 'ETF', 'ETN', 'FUND', 'BOND', 'GOLD', 'CASH'));
 

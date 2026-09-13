@@ -17,16 +17,16 @@ export type MarketBucket = ExposureRegion | "기타";
 /** 상품 자체의 고정된 분류 — 사용자가 설정하는 자산군(전략별 그룹, `AssetGroup`)과는
  * 별개다. 예: 삼성전자는 assetType="STOCK", 자산군은 사용자가 정한 "국내 성장주".
  * 변수명은 assetType이지만 화면에는 "자산종류"로 표시한다. */
-export type AssetType = "STOCK" | "ETF" | "ETN" | "REIT" | "FUND" | "BOND" | "CASH";
+export type AssetType = "STOCK" | "ETF" | "ETN" | "FUND" | "BOND" | "GOLD" | "CASH";
 
 export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
-  STOCK: "개별 주식",
+  STOCK: "개별주식",
   ETF: "ETF",
   ETN: "ETN",
-  REIT: "리츠",
-  FUND: "일반 펀드",
+  FUND: "펀드",
   BOND: "채권",
-  CASH: "예수금",
+  GOLD: "금현물",
+  CASH: "현금성",
 };
 
 export interface AssetGroup {

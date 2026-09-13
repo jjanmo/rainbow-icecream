@@ -51,7 +51,7 @@ const REGION_ITEMS = [
   { label: '해외', value: '해외' },
 ];
 
-const ACCOUNT_TYPES = ['일반계좌', 'ISA', '연금저축', 'IRP', 'CMA', '파킹통장', '예적금', '기타'];
+const ACCOUNT_TYPES = ['일반계좌', 'ISA', '연금저축', 'DC', 'IRP', '기타'];
 const ACCOUNT_ITEMS = ACCOUNT_TYPES.map((v) => ({ label: v, value: v }));
 
 const ASSET_TYPE_ITEMS = (Object.keys(ASSET_TYPE_LABELS) as AssetType[]).map((t) => ({
