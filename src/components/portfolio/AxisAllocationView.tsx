@@ -8,9 +8,10 @@ import { diffColor } from '@/lib/calc/rebalance';
 import { fmtPct, fmtSigned, fmtUsd, fmtWon } from '@/lib/format';
 
 /**
- * 시장·변동성 축의 비중 체크 화면 (ADR-0058). 자산군 축(`/portfolio` 기본)과 같은
- * 비주얼 언어 — 목표/실제 도넛 한 쌍 + 버킷별 목표%/실제%/차이/조정금 행, 펼치면
- * 그 버킷에 속한 종목 목록(읽기 전용). 자산군 축과 달리 dnd·CRUD는 없다.
+ * `/portfolio`의 시장(실질지역) 축 화면 — 목표/실제 도넛 한 쌍 + 버킷별 목표%/실제%/
+ * 차이/조정금 행, 펼치면 그 버킷에 속한 종목 목록(읽기 전용). 읽기+편집 모드 둘 다에
+ * 쓰인다(목표% 인라인 입력, `isEditing`). 역할 축은 섹터가 역할 버킷 안에 중첩돼야
+ * 해서 이 컴포넌트를 그대로 못 쓰고 `RoleAllocationView`를 따로 둔다 (ADR-0062).
  */
 export function AxisAllocationView({
   result,
@@ -91,8 +92,8 @@ export function AxisAllocationView({
 
       {result.excludedMembers.length > 0 && (
         <p className="mb-3 text-xs text-muted-foreground">
-          측정 불가 {fmtPct((result.excludedValue / (result.includedValue + result.excludedValue)) * 100)} (
-          {result.excludedMembers.length}종목) — 위 비중은 측정 가능분을 100%로 본 값입니다.
+          미배정 {fmtPct((result.excludedValue / (result.includedValue + result.excludedValue)) * 100)} (
+          {result.excludedMembers.length}종목) — 위 비중은 이 탭에 배정된 종목만으로 계산한 값입니다.
         </p>
       )}
 
@@ -132,7 +133,12 @@ function BucketCard({
     <div className="mb-4 rounded-lg border border-border bg-card p-5 sm:p-6">
       <div className={`flex flex-wrap items-center gap-3 ${expanded ? 'pb-2' : ''}`}>
         <div className="size-3.5 shrink-0 rounded-full" style={{ background: bucket.color }} />
-        <span className="flex-1 text-[15px] font-semibold">{bucket.label}</span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[15px] font-semibold">{bucket.label}</div>
+          {bucket.description && (
+            <div className="truncate text-[11px] text-muted-foreground">{bucket.description}</div>
+          )}
+        </div>
 
         <div className="flex shrink-0 items-end gap-3">
           <span className="flex w-16 flex-col items-end leading-tight">

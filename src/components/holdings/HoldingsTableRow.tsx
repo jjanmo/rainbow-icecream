@@ -8,10 +8,14 @@ import { FitText } from "./FitText";
 
 export function HoldingsTableRow({
   holding,
+  roleNameById,
+  sectorNameById,
   onEdit,
   onDelete,
 }: {
   holding: HoldingCalc;
+  roleNameById: Map<string, string>;
+  sectorNameById: Map<string, string>;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -23,15 +27,19 @@ export function HoldingsTableRow({
         <div className="flex items-center gap-1.5">
           <div className="min-w-0">
             <FitText className="font-semibold">{holding.name}</FitText>
-            <FitText className="font-mono text-muted-foreground">{holding.ticker || " "}</FitText>
+            <FitText className="font-mono text-muted-foreground">{holding.ticker || " "}</FitText>
           </div>
         </div>
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-1.5">
-          <div className="size-2 shrink-0 rounded-full" style={{ background: holding.groupColor }} />
-          <FitText>{holding.groupName}</FitText>
-        </div>
+        <FitText className={holding.roleId ? undefined : "text-muted-foreground italic"}>
+          {holding.roleId ? (roleNameById.get(holding.roleId) ?? "-") : "미분류"}
+        </FitText>
+      </TableCell>
+      <TableCell>
+        <FitText className={holding.sectorId ? undefined : "text-muted-foreground italic"}>
+          {holding.sectorId ? (sectorNameById.get(holding.sectorId) ?? "-") : "미지정"}
+        </FitText>
       </TableCell>
       <TableCell>
         <FitText className="text-muted-foreground">{ASSET_TYPE_LABELS[holding.assetType]}</FitText>

@@ -11,16 +11,18 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { HoldingFormDialog } from '@/components/holdings/HoldingFormDialog';
-import { HoldingsHeatmap } from '@/components/holdings/HoldingsHeatmap';
+import { HoldingsHeatmap, type HeatmapBucketOf } from '@/components/holdings/HoldingsHeatmap';
 import { HoldingsTable } from '@/components/holdings/HoldingsTable';
-import { ALL_HOLDINGS_FILTER, HoldingsFilterBar, type HoldingsFilter } from '@/components/holdings/HoldingsFilterBar';
+import { ALL_HOLDINGS_FILTER, HoldingsFilterBar, matchesHoldingsFilter, type HoldingsFilter } from '@/components/holdings/HoldingsFilterBar';
 import { DataErrorNotice } from '@/components/shared/DataErrorNotice';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAxisCategories } from '@/hooks/useAxisCategories';
 import { useDailyReturns } from '@/hooks/useDailyReturns';
 import { useAddHolding, useDeleteHolding, useUpdateHolding } from '@/hooks/useHoldings';
 import { useRebalanceData } from '@/hooks/useRebalanceData';
-import { UNGROUPED_KEY } from '@/lib/calc/rebalance';
+import { colorFor, hueForGroupIndex } from '@/lib/calc/color';
+import type { HoldingCalc } from '@/lib/calc/rebalance';
 import { holdingDownloadLabel } from '@/lib/format';
 import type { Holding, NewHolding } from '@/types/domain';
 import { cn, downloadTextFile } from '@/lib/utils';
@@ -33,6 +35,8 @@ export default function HoldingsPage() {
   const addHolding = useAddHolding();
   const updateHolding = useUpdateHolding();
   const deleteHolding = useDeleteHolding();
+  const roleCategoriesQuery = useAxisCategories('role');
+  const sectorCategoriesQuery = useAxisCategories('sector');
 
   const [filter, setFilter] = useState<HoldingsFilter>(ALL_HOLDINGS_FILTER);
   const [view, setView] = useState<HoldingsView>('table');
@@ -40,38 +44,52 @@ export default function HoldingsPage() {
   const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Holding | null>(null);
 
+  const roleCategories = useMemo(() => roleCategoriesQuery.data ?? [], [roleCategoriesQuery.data]);
+  const sectorCategories = useMemo(() => sectorCategoriesQuery.data ?? [], [sectorCategoriesQuery.data]);
+
+  const roleNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    roleCategories.forEach((r) => map.set(r.id, r.name));
+    return map;
+  }, [roleCategories]);
+  const sectorNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    sectorCategories.forEach((s) => map.set(s.id, s.name));
+    return map;
+  }, [sectorCategories]);
+
   const filteredHoldings = useMemo(() => {
     if (!data) return [];
-    return data.holdings.filter(
-      (h) =>
-        (filter.groupId === 'all' ||
-          (filter.groupId === UNGROUPED_KEY ? h.groupId === null : h.groupId === filter.groupId)) &&
-        (filter.account === 'all' || h.account === filter.account) &&
-        (filter.region === 'all' || h.region === filter.region),
-    );
+    return data.holdings.filter((h) => matchesHoldingsFilter(h, filter));
   }, [data, filter]);
+
+  const accountOptions = useMemo(() => {
+    const values = (data?.holdings ?? []).map((h) => h.account).filter((a): a is string => !!a && a.trim().length > 0);
+    return [...new Set(values)].sort();
+  }, [data]);
+
+  // 히트맵은 역할 기준으로 depth-1 그룹핑한다 — 역할은 이제 종목의 고정 속성이라
+  // (ADR-0062/0063), 예전처럼 "포트폴리오 탭을 먼저 선택해야" 하는 제약이 없다.
+  // 역할 자체가 사용자가 추가/삭제하는 동적 목록이 됐으므로 색은 그 목록의 순서로 파생한다.
+  const roleColorByRoleId = useMemo(() => {
+    const map = new Map<string, string>();
+    roleCategories.forEach((r, i) => map.set(r.id, colorFor(hueForGroupIndex(i, roleCategories.length), 0)));
+    return map;
+  }, [roleCategories]);
+  const heatmapBucketOf: HeatmapBucketOf = (h: HoldingCalc) => {
+    if (!h.roleId) return null;
+    return {
+      id: h.roleId,
+      name: roleNameById.get(h.roleId) ?? '',
+      color: roleColorByRoleId.get(h.roleId) ?? 'oklch(70% 0 0)',
+    };
+  };
 
   const heatmapTickers = useMemo(
     () => filteredHoldings.map((h) => h.ticker).filter((t): t is string => t !== null),
     [filteredHoldings],
   );
   const dailyReturnsQuery = useDailyReturns(heatmapTickers, view === 'heatmap');
-
-  const groupOptions = useMemo(() => data?.groups.map((g) => ({ id: g.id, name: g.name })) ?? [], [data]);
-  // 필터 전용 — 미지정(group_id null) 종목이 있으면 옵션 하나 더. 종목 폼에는 안 넘긴다
-  // (미지정으로 새로 만들거나 배정할 수는 없음).
-  const filterGroupOptions = useMemo(
-    () =>
-      (data?.holdings ?? []).some((h) => h.groupId === null)
-        ? [...groupOptions, { id: UNGROUPED_KEY, name: '미지정' }]
-        : groupOptions,
-    [data, groupOptions],
-  );
-
-  const accountOptions = useMemo(() => {
-    const values = (data?.holdings ?? []).map((h) => h.account).filter((a): a is string => !!a && a.trim().length > 0);
-    return [...new Set(values)].sort();
-  }, [data]);
 
   function openAddModal() {
     setEditingHolding(null);
@@ -101,24 +119,21 @@ export default function HoldingsPage() {
           <h1 className="mb-1.5 text-xl font-semibold sm:text-2xl">보유 종목</h1>
           <p className="text-sm text-muted-foreground">보유 중인 종목을 직접 관리하세요.</p>
         </div>
-        <Button onClick={openAddModal} disabled={groupOptions.length === 0}>
-          + 종목 추가
-        </Button>
+        <Button onClick={openAddModal}>+ 종목 추가</Button>
       </div>
 
       {isError && <DataErrorNotice error={error} />}
 
       {isLoading || !data ? (
         <Skeleton className="h-96 w-full rounded-lg" />
-      ) : groupOptions.length === 0 ? (
-        <p className="text-sm text-muted-foreground">먼저 포트폴리오에서 자산군을 추가해주세요.</p>
       ) : (
         <>
           <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
             <HoldingsFilterBar
               filter={filter}
               onChange={setFilter}
-              groupOptions={filterGroupOptions}
+              roleOptions={roleCategories}
+              sectorOptions={sectorCategories}
               accountOptions={accountOptions}
             />
             <div className="flex shrink-0 items-center gap-3">
@@ -157,6 +172,8 @@ export default function HoldingsPage() {
             <HoldingsTable
               rows={filteredHoldings}
               usdKrwRate={usdKrwRate}
+              roleNameById={roleNameById}
+              sectorNameById={sectorNameById}
               onEdit={openEditModal}
               onDelete={(id) => {
                 const h = data.holdings.find((holding) => holding.id === id);
@@ -166,6 +183,7 @@ export default function HoldingsPage() {
           ) : (
             <HoldingsHeatmap
               holdings={filteredHoldings}
+              bucketOf={heatmapBucketOf}
               dailyChangeByTicker={dailyReturnsQuery.data ?? {}}
               isLoadingDailyChanges={dailyReturnsQuery.isLoading}
             />
@@ -176,10 +194,6 @@ export default function HoldingsPage() {
       <HoldingFormDialog
         open={modalOpen}
         onOpenChange={setModalOpen}
-        groupOptions={groupOptions}
-        defaultGroupId={groupOptions[0]?.id ?? null}
-        // editingHolding only ever comes from the active-only holdings list —
-        // its groupId is never null (only a soft-deleted holding's can be).
         initialHolding={editingHolding as NewHolding | null}
         onSubmit={(holding) => {
           if (editingHolding) {

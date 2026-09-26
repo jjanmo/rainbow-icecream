@@ -65,7 +65,10 @@
 | [0057](./0057-nullable-holding-group-id.md) | 소프트 삭제된 종목의 group_id를 null로 비움("미분류" 무한 재생성 버그 수정) | Accepted |
 | [0058](./0058-multi-axis-allocation-check.md) | 비중 체크 다축 확장 (① 시장 구현 / ③ 변동성 보류) | Accepted (① only) |
 | [0059](./0059-unclassified-as-null-group.md) | "미분류"를 실제 그룹이 아니라 group_id=null로 표현 | Accepted |
-| [0060](./0060-sector-axis.md) | 섹터/테마 분류 (검토 후 철회) | Withdrawn |
+| [0060](./0060-sector-axis.md) | 섹터/테마 분류 (검토 후 철회) | Superseded by ADR-0062 |
+| [0061](./0061-asset-type-account-option-revision.md) | 자산종류·계좌 옵션 개편 | Accepted |
+| [0062](./0062-role-sector-fixed-axes.md) | 자유 커스텀 탭 폐기, "역할(고정)→섹터(자유, 종속)" 2단 분류로 교체 | Partially superseded by ADR-0063 |
+| [0063](./0063-unify-role-sector-axis-categories.md) | 역할·섹터를 axis_categories 테이블로 통합, 역할도 동적 목록으로 | Accepted |
 
 ## 새 ADR 작성 형식
 

@@ -11,14 +11,16 @@ export function deriveExposureRegion(region: Region | ""): ExposureRegion | null
 }
 
 /**
- * 자산군 축(`computeRebalance`의 `GroupCalc`)을 일반화한 것 — "종목을 어느 버킷에
- * 넣느냐"(`bucketOf`)와 "목표%를 어디서 읽느냐"(`targets`)만 바꿔 시장 축을 같은
- * 계산식으로 굴린다 (ADR-0058). `diff`/`actionAmount`의 부호·색 규칙은 `GroupCalc`과
- * 동일하니 `diffColor`(`lib/calc/rebalance.ts`)를 그대로 재사용한다.
+ * `/portfolio`의 모든 탭(자산군 포함)이 공유하는 단일 계산 엔진 — "종목을 어느
+ * 버킷에 넣느냐"(`bucketOf`)와 "목표%를 어디서 읽느냐"(`targets`)만 바꿔 탭마다
+ * 같은 계산식으로 굴린다 (ADR-0058). `diff`/`actionAmount`의
+ * 부호·색 규칙은 `diffColor`(`lib/calc/rebalance.ts`)를 그대로 재사용한다.
  */
 export interface AxisBucketCalc {
   key: string;
   label: string;
+  /** 옵션, 최대 50자 — 커스텀 탭 버킷만 가질 수 있다(시장 축 버킷은 항상 undefined). */
+  description?: string | null;
   /** 위치 기반 파생색 — 자산군 색과 같은 로직(`hueForGroupIndex`). */
   color: string;
   members: HoldingCalc[];
@@ -51,7 +53,7 @@ export function computeAxisRebalance({
   targets,
 }: {
   holdings: HoldingCalc[];
-  buckets: { key: string; label: string }[];
+  buckets: { key: string; label: string; description?: string | null }[];
   /** null이면 이 축에서 제외(측정 불가) — 분모에서도 빠진다. */
   bucketOf: (h: HoldingCalc) => string | null;
   targets: Record<string, number>;
@@ -81,6 +83,7 @@ export function computeAxisRebalance({
     return {
       key: b.key,
       label: b.label,
+      description: b.description,
       color: colorFor(hueForGroupIndex(index, buckets.length), 0),
       members,
       value,

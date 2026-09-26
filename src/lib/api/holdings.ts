@@ -1,46 +1,44 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AssetType, ExposureRegion, Holding, NewHolding, Region } from "@/types/domain";
 
-/** 종목 수정 패치 — `groupId`는 null 허용(자산군 삭제/언분류, ADR-0059). 생성은
- * 여전히 실제 그룹 필수라 `NewHolding.groupId`는 non-null 그대로다. */
-export type HoldingPatch = Partial<Omit<NewHolding, "groupId">> & { groupId?: string | null };
+export type HoldingPatch = Partial<NewHolding>;
 
 interface HoldingRow {
   id: string;
   user_id: string;
-  group_id: string | null;
   ticker: string | null;
   name: string;
-  target_pct_in_group: number;
   qty: number;
   avg_price: number;
   account: string | null;
   region: Region;
   asset_type: AssetType;
   exposure_region: ExposureRegion | null;
-  sort_order: number;
+  role_id: string | null;
+  sector_id: string | null;
+  leverage: number;
   deleted_at: string | null;
   created_at: string;
 }
 
 const COLUMNS =
-  "id, user_id, group_id, ticker, name, target_pct_in_group, qty, avg_price, account, region, asset_type, exposure_region, sort_order, deleted_at, created_at";
+  "id, user_id, ticker, name, qty, avg_price, account, region, asset_type, exposure_region, role_id, sector_id, leverage, deleted_at, created_at";
 
 function toDomain(row: HoldingRow): Holding {
   return {
     id: row.id,
     userId: row.user_id,
-    groupId: row.group_id,
     ticker: row.ticker,
     name: row.name,
-    targetPctInGroup: Number(row.target_pct_in_group),
     qty: Number(row.qty),
     avgPrice: Number(row.avg_price),
     account: row.account,
     region: row.region,
     assetType: row.asset_type,
     exposureRegion: row.exposure_region,
-    sortOrder: row.sort_order,
+    roleId: row.role_id,
+    sectorId: row.sector_id,
+    leverage: Number(row.leverage),
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
   };
@@ -54,7 +52,6 @@ export async function fetchHoldings(supabase: SupabaseClient): Promise<Holding[]
     .from("holdings")
     .select(COLUMNS)
     .is("deleted_at", null)
-    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) throw error;
   return (data as HoldingRow[]).map(toDomain);
@@ -68,12 +65,13 @@ export async function fetchAllHoldings(supabase: SupabaseClient): Promise<Holdin
   const { data, error } = await supabase
     .from("holdings")
     .select(COLUMNS)
-    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) throw error;
   return (data as HoldingRow[]).map(toDomain);
 }
 
+/** 역할·섹터는 매매 시점(매매 모달)에 입력받는 게 기본이지만, 새 종목 등록 자체는 여기서도
+ * 가능하다(ADR-0044) — 미정이면 null(미분류)로 두고 나중에 `/holdings`나 매매 모달에서 채운다. */
 export async function insertHolding(
   supabase: SupabaseClient,
   holding: NewHolding,
@@ -81,17 +79,17 @@ export async function insertHolding(
   const { data, error } = await supabase
     .from("holdings")
     .insert({
-      group_id: holding.groupId,
       ticker: holding.ticker,
       name: holding.name,
-      target_pct_in_group: holding.targetPctInGroup,
       qty: holding.qty,
       avg_price: holding.avgPrice,
       account: holding.account,
       region: holding.region,
       asset_type: holding.assetType,
       exposure_region: holding.exposureRegion,
-      sort_order: holding.sortOrder,
+      role_id: holding.roleId,
+      sector_id: holding.sectorId,
+      leverage: holding.leverage,
     })
     .select(COLUMNS)
     .single();
@@ -105,17 +103,17 @@ export async function updateHolding(
   patch: HoldingPatch,
 ): Promise<void> {
   const update: Record<string, unknown> = {};
-  if (patch.groupId !== undefined) update.group_id = patch.groupId;
   if (patch.ticker !== undefined) update.ticker = patch.ticker;
   if (patch.name !== undefined) update.name = patch.name;
-  if (patch.targetPctInGroup !== undefined) update.target_pct_in_group = patch.targetPctInGroup;
   if (patch.qty !== undefined) update.qty = patch.qty;
   if (patch.avgPrice !== undefined) update.avg_price = patch.avgPrice;
   if (patch.account !== undefined) update.account = patch.account;
   if (patch.region !== undefined) update.region = patch.region;
   if (patch.assetType !== undefined) update.asset_type = patch.assetType;
   if (patch.exposureRegion !== undefined) update.exposure_region = patch.exposureRegion;
-  if (patch.sortOrder !== undefined) update.sort_order = patch.sortOrder;
+  if (patch.roleId !== undefined) update.role_id = patch.roleId;
+  if (patch.sectorId !== undefined) update.sector_id = patch.sectorId;
+  if (patch.leverage !== undefined) update.leverage = patch.leverage;
 
   const { error } = await supabase.from("holdings").update(update).eq("id", id);
   if (error) throw error;
@@ -129,4 +127,3 @@ export async function deleteHolding(supabase: SupabaseClient, id: string): Promi
   const { error } = await supabase.from("holdings").update({ deleted_at: new Date().toISOString() }).eq("id", id);
   if (error) throw error;
 }
-

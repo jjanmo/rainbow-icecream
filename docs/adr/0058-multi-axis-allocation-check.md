@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted — **① 시장 축만 살아있음** (2026-09-02 기준).
-- **① 시장 축** (구현·유지): `holdings.exposure_region` + `axis_targets` 마이그레이션, 휴리스틱 백필, `computeAxisRebalance`(`lib/calc/axisRebalance.ts`), `/portfolio` 축 탭(`?axis=group|market`) + 시장 축 뷰/목표 편집, 종목 폼 2곳에 실질 지역 입력.
+Accepted — **① 시장 축만 살아있음** (2026-09-02 기준). **② 자산군 축은 이후 커스텀 탭(코드로만 존재, 커밋 전 폐기)을 거쳐 [ADR-0062](./0062-role-sector-fixed-axes.md)의 역할 축으로 대체됐다** (2026-09-25) — `asset_groups` 테이블·`group_id`는 더 이상 앱이 안 쓴다. 아래 "축 ② 자산군" 절은 역사적 기록으로 남긴다.
+- **① 시장 축** (구현·유지): `holdings.exposure_region` + `axis_targets` 마이그레이션, 휴리스틱 백필, `computeAxisRebalance`(`lib/calc/axisRebalance.ts`), `/portfolio` 축 탭(현재는 `?axis=role|market`) + 시장 축 뷰/목표 편집, 종목 폼 2곳에 실질 지역 입력.
 - **③ 변동성 축** (구현했다가 **되돌림**): σ 절대 임계값(방어<12/중립/공격>25)이 주식 위주 포트폴리오에 안 맞았다 — 100% 주식인 SCHD가 σ 17%로 "중립"에 걸리는 등, **"공격/중립/방어를 어떤 기준으로 나눌지" 자체가 아직 안 정해졌다.** 사용자가 그 기준을 더 고민하기로 하고 탭을 삭제. 관련 코드 전부 제거(`useRiskMetrics`, `lib/calc/risk.ts`, `RiskSummary`, `tossHistoryProvider`, `lib/api/priceDaily.ts`, `/api/toss/history`, `price_daily` 테이블 drop, `AxisTabs`/`AllocationAxis`/`axis_targets`에서 volatility 제거). 파이프라인 자체는 검증됐었다(실 포트폴리오 σ ≈ 20~26%, Toss 캔들 count=200 페이지네이션·공분산 계산 동작 확인) — 재도입 시 git 기록에서 되살릴 수 있다.
   - **재도입 시 결정할 것**(사용자 열린 질문): 절대 σ 임계값을 주식 기준으로 재조정(방어<18/공격>28) vs 베타 기준(SCHD 베타 ≈ 0.8) vs 상대 백분위 vs 2단계(공격/방어, 바벨). `asset_type IN ('CASH','BOND')` → 방어 확정, ticker 없는 FUND·조회 실패·이력 부족 → "측정 불가"는 유지할 만한 부분이었다.
 

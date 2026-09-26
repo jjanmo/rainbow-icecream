@@ -2,8 +2,11 @@
 
 ## Status
 
-Withdrawn (2026-09-02). `holdings.sector` 컬럼·타입·폼 입력·마이그레이션 전부 제거.
-필요해지면 이 문서 + git 기록에서 되살린다.
+Withdrawn (2026-09-02), **Superseded by [ADR-0062](./0062-role-sector-fixed-axes.md)**
+(2026-09-25). `holdings.sector` 컬럼·타입·폼 입력·마이그레이션 전부 제거했던 이 결정은
+이후 섹터가 "역할에 종속된 2차 분류축"(`sectors` 테이블 + `holdings.sector_id`)으로
+다시 도입되면서 뒤집혔다 — 이번엔 목표%·화면(`/portfolio` 역할 탭 중첩 뷰)·매매 모달
+입력까지 실제로 쓰이는 1급 개념이라 "죽은 컬럼"이 되는 문제가 없다.
 
 ## Context
 

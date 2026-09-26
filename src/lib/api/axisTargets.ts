@@ -18,7 +18,7 @@ export async function fetchAxisTargets(supabase: SupabaseClient): Promise<AxisTa
 }
 
 /**
- * 한 축(market/volatility)의 버킷별 목표를 통째로 교체한다 — `/portfolio`의 "완료"
+ * 시장 축의 버킷별 목표를 통째로 교체한다 — `/portfolio`의 "완료"
  * 시점에만 호출된다(autosave 아님, ADR-0007). 0인 버킷은 행을 안 남긴다:
  * 먼저 그 축 행을 다 지우고(RLS로 자기 유저에 한정됨) 0보다 큰 것만 insert한다.
  * `user_id`는 컬럼 기본값 `auth.uid()`로 채워진다.

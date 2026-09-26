@@ -3,15 +3,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Popover,
-  PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ClassificationFieldsBlock } from '@/components/shared/ClassificationFields';
+import { useAddAxisCategory, useAxisCategories } from '@/hooks/useAxisCategories';
 import { deriveExposureRegion } from '@/lib/calc/axisRebalance';
 import {
   ASSET_TYPE_LABELS,
@@ -30,7 +24,7 @@ const EXPOSURE_ITEMS = [
 // 추가 모달은 최초 진입 시 아무것도 선택되지 않은 placeholder 상태로 열려야 하므로,
 // region/assetType도 (수정 모달과 달리) 빈 문자열을 잠깐 가질 수 있다 — 제출 시점엔
 // canSubmit이 이미 실값 채움을 확인했으므로 안전하게 단언한다.
-type Draft = Omit<NewHolding, 'groupId' | 'qty' | 'avgPrice' | 'region' | 'assetType'> & {
+type Draft = Omit<NewHolding, 'qty' | 'avgPrice' | 'region' | 'assetType'> & {
   region: Region | '';
   assetType: AssetType | '';
 };
@@ -38,12 +32,13 @@ type Draft = Omit<NewHolding, 'groupId' | 'qty' | 'avgPrice' | 'region' | 'asset
 const EMPTY_DRAFT: Draft = {
   ticker: '',
   name: '',
-  targetPctInGroup: 0,
   account: '',
   region: '',
   assetType: '',
   exposureRegion: null,
-  sortOrder: 0,
+  roleId: null,
+  sectorId: null,
+  leverage: 1,
 };
 
 const REGION_ITEMS = [
@@ -63,96 +58,78 @@ function toDraft(holding: NewHolding): Draft {
   return {
     ticker: holding.ticker ?? '',
     name: holding.name,
-    targetPctInGroup: holding.targetPctInGroup,
     account: holding.account ?? '',
     region: holding.region,
     assetType: holding.assetType,
     exposureRegion: holding.exposureRegion,
-    sortOrder: holding.sortOrder,
+    roleId: holding.roleId,
+    sectorId: holding.sectorId,
+    leverage: holding.leverage,
   };
-}
-
-function AssetTypeHelp() {
-  return (
-    <Popover>
-      <PopoverTrigger
-        aria-label="자산종류와 자산군의 차이 보기"
-        className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border text-[10px] leading-none font-normal text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground"
-      >
-        ?
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 text-left">
-        <PopoverHeader>
-          <PopoverTitle className="text-[13px]">자산종류 vs 자산군</PopoverTitle>
-          <PopoverDescription className="flex flex-col gap-1.5 text-xs leading-relaxed">
-            <span>
-              <span className="font-semibold text-foreground">자산종류</span> — 이 종목이 어떤 금융상품인지의 고정된
-              분류입니다(개별 주식·ETF·ETN·리츠·일반 펀드·채권·예수금). 정해진 값 중에서 고릅니다.
-            </span>
-            <span>
-              <span className="font-semibold text-foreground">자산군</span> — 내가 세운 투자 전략에 따라 직접 이름 붙인
-              그룹입니다(예: &ldquo;성장주&rdquo;, &ldquo;배당주&rdquo;). 목표 비중을 정하는 단위예요.
-            </span>
-          </PopoverDescription>
-        </PopoverHeader>
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 export function HoldingFormDialog({
   open,
   onOpenChange,
-  groupOptions,
-  defaultGroupId,
   initialHolding,
   onSubmit,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  groupOptions: { id: string; name: string }[];
-  defaultGroupId: string | null;
   /** When set, the dialog edits this holding instead of creating a new one. */
   initialHolding?: NewHolding | null;
   /** 수량·평균매입가는 여기서 받지 않는다 — 매매일지의 체결로만 바뀐다 (ADR-0044).
-   * 새 종목은 항상 수량 0으로 만들어지고, 매매일지에서 첫 체결을 기록해야 채워진다. */
+   * 새 종목은 항상 수량 0으로 만들어지고, 매매일지에서 첫 체결을 기록해야 채워진다.
+   * 역할·섹터는 선택 입력 — 매매 시점에 채워도 된다 (ADR-0062). */
   onSubmit: (holding: Omit<NewHolding, 'qty' | 'avgPrice'>) => void;
 }) {
   const isEdit = !!initialHolding;
-  const [groupId, setGroupId] = useState(initialHolding?.groupId ?? defaultGroupId ?? '');
   const [draft, setDraft] = useState<Draft>(initialHolding ? toDraft(initialHolding) : EMPTY_DRAFT);
+  const [leverageText, setLeverageText] = useState(String((initialHolding ?? EMPTY_DRAFT).leverage));
   // 현금성 종목(ticker 없음)은 매매일지의 "+ 새 종목"에서만 만들 수 있다 — 여기서는
   // 기존 현금성 종목의 티커 입력만 계속 비활성화해 둔다(코드로 되돌릴 방법이 없다).
   const isCash = !!initialHolding && !initialHolding.ticker;
   const [prevOpen, setPrevOpen] = useState(open);
+  const roleCategoriesQuery = useAxisCategories('role');
+  const sectorCategoriesQuery = useAxisCategories('sector');
+  const addAxisCategory = useAddAxisCategory();
 
   // Reset/prefill the form when the dialog transitions to open — adjusted
   // during render rather than in an effect, see https://react.dev/learn/you-might-not-need-an-effect
   if (open !== prevOpen) {
     setPrevOpen(open);
     if (open) {
-      setGroupId(initialHolding?.groupId ?? defaultGroupId ?? '');
-      setDraft(initialHolding ? toDraft(initialHolding) : EMPTY_DRAFT);
+      const nextDraft = initialHolding ? toDraft(initialHolding) : EMPTY_DRAFT;
+      setDraft(nextDraft);
+      setLeverageText(String(nextDraft.leverage));
     }
   }
 
   const tickerLabel = draft.region === '' ? '코드/티커' : draft.region === '국내' ? '코드' : '티커';
 
   const canSubmit =
-    !!groupId &&
     !!draft.region &&
     !!draft.assetType &&
     (isCash || (draft.ticker ?? '').trim().length > 0) &&
     draft.name.trim().length > 0 &&
     (draft.account ?? '').trim().length > 0;
 
-  function handleSubmit() {
-    if (!canSubmit || !draft.region || !draft.assetType) return;
-    onSubmit({ ...draft, groupId, region: draft.region, assetType: draft.assetType, ticker: isCash ? null : draft.ticker });
-    onOpenChange(false);
+  async function handleCreateSector(name: string) {
+    const sortOrder = sectorCategoriesQuery.data?.length ?? 0;
+    return addAxisCategory.mutateAsync({ axis: 'sector', name, description: null, targetPct: 0, sortOrder });
   }
 
-  const groupItems = groupOptions.map((g) => ({ label: g.name, value: g.id }));
+  function handleSubmit() {
+    if (!canSubmit || !draft.region || !draft.assetType) return;
+    onSubmit({
+      ...draft,
+      region: draft.region,
+      assetType: draft.assetType,
+      ticker: isCash ? null : draft.ticker,
+      leverage: parseFloat(leverageText) || 1,
+    });
+    onOpenChange(false);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -162,48 +139,26 @@ export function HoldingFormDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
-          <div className="flex gap-2.5">
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Label>
-                자산군 <span className="text-destructive">*</span>
-              </Label>
-              <Select items={groupItems} value={groupId} onValueChange={(v) => setGroupId(v ?? '')}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="자산군 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groupOptions.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-1 flex-col gap-1.5">
-              <div className="flex items-center gap-1">
-                <Label>
-                  자산종류 <span className="text-destructive">*</span>
-                </Label>
-                <AssetTypeHelp />
-              </div>
-              <Select
-                items={ASSET_TYPE_ITEMS}
-                value={draft.assetType}
-                onValueChange={(v) => v && setDraft((d) => ({ ...d, assetType: v as AssetType }))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="자산종류 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ASSET_TYPE_ITEMS.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>
+              자산종류 <span className="text-destructive">*</span>
+            </Label>
+            <Select
+              items={ASSET_TYPE_ITEMS}
+              value={draft.assetType}
+              onValueChange={(v) => v && setDraft((d) => ({ ...d, assetType: v as AssetType }))}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="자산종류 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {ASSET_TYPE_ITEMS.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex gap-2.5">
@@ -302,6 +257,23 @@ export function HoldingFormDialog({
               </Label>
               <Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5 rounded-lg border border-dashed border-border p-2.5">
+            <Label className="text-[11px] text-muted-foreground">
+              역할·섹터·레버리지 (선택 — 매매 시점에도 지정할 수 있습니다)
+            </Label>
+            <ClassificationFieldsBlock
+              roles={roleCategoriesQuery.data ?? []}
+              roleId={draft.roleId}
+              onRoleIdChange={(roleId) => setDraft((d) => ({ ...d, roleId }))}
+              sectorId={draft.sectorId}
+              onSectorIdChange={(sectorId) => setDraft((d) => ({ ...d, sectorId }))}
+              sectors={sectorCategoriesQuery.data ?? []}
+              onCreateSector={handleCreateSector}
+              leverageText={leverageText}
+              onLeverageTextChange={setLeverageText}
+            />
           </div>
 
           {isCash && (

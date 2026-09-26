@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { ClassificationFieldsBlock } from '@/components/shared/ClassificationFields';
 import { useComboboxSearch } from '@/hooks/useComboboxSearch';
 import { cn } from '@/lib/utils';
 import { deriveExposureRegion } from '@/lib/calc/axisRebalance';
@@ -22,6 +23,7 @@ import { fmtQty, fmtUsd, fmtWon } from '@/lib/format';
 import {
   ASSET_TYPE_LABELS,
   type AssetType,
+  type AxisCategory,
   type ExposureRegion,
   type Holding,
   type NewHolding,
@@ -68,22 +70,25 @@ interface HoldingComboItem {
 }
 
 interface NewHoldingDraft {
-  groupId: string;
   ticker: string;
   name: string;
   region: Region;
   account: string;
   assetType: AssetType;
   exposureRegion: ExposureRegion | null;
+  roleId: string | null;
+  sectorId: string | null;
 }
 
-const EMPTY_NEW_HOLDING: Omit<NewHoldingDraft, 'groupId'> = {
+const EMPTY_NEW_HOLDING: NewHoldingDraft = {
   ticker: '',
   name: '',
   region: '국내',
   account: '일반계좌',
   assetType: 'ETF',
   exposureRegion: '한국',
+  roleId: null,
+  sectorId: null,
 };
 
 const ASSET_TYPE_ITEMS = (Object.keys(ASSET_TYPE_LABELS) as AssetType[]).map((t) => ({
@@ -130,8 +135,11 @@ export function ExecutionFormDialog({
   onOpenChange,
   holdings,
   executions,
-  groupOptions,
   tradeNotes,
+  roles,
+  sectors,
+  onCreateSector,
+  onUpdateHoldingClassification,
   onSubmit,
   editingExecution,
   onUpdate,
@@ -141,9 +149,21 @@ export function ExecutionFormDialog({
   holdings: Holding[];
   /** 매수 시 근거 프리필, 매도 시 매수 이력 표시에 쓴다 — 전체 체결이 필요하다. */
   executions: Execution[];
-  groupOptions: { id: string; name: string }[];
   /** 수정 모드에서 이 체결에 이미 달린 근거를 불러오기 위해 필요하다. */
   tradeNotes: TradeNote[];
+  /** 역할 칩 목록(ADR-0063) — 유저가 "역할 관리"에서 추가/삭제하는 동적 목록. */
+  roles: AxisCategory[];
+  /** 섹터 콤보박스 목록 (ADR-0062/0063). */
+  sectors: AxisCategory[];
+  /** 콤보박스에서 "+ 새 섹터 만들기"를 고르면 호출 — 만든 섹터를 반환한다. */
+  onCreateSector: (name: string) => Promise<{ id: string }>;
+  /** 기존 종목의 역할·섹터·레버리지를 매매와 무관하게 바로 바꾼다("변경" 링크). */
+  onUpdateHoldingClassification: (input: {
+    holdingId: string;
+    roleId: string | null;
+    sectorId: string | null;
+    leverage: number;
+  }) => Promise<void>;
   onSubmit: (submit: ExecutionSubmit) => void;
   /** 지정하면 새 체결 추가가 아니라 이 체결을 고치는 모드로 연다 — 종목은 바꿀
    * 수 없다(다른 종목으로 옮기는 건 별도 리플레이 대상이 둘이 되는 문제라 지원하지
@@ -163,9 +183,18 @@ export function ExecutionFormDialog({
   const [qtyText, setQtyText] = useState('');
   const [priceText, setPriceText] = useState('');
   const [executedAtLocal, setExecutedAtLocal] = useState('');
-  const [newHolding, setNewHolding] = useState<NewHoldingDraft>({ groupId: '', ...EMPTY_NEW_HOLDING });
+  const [newHolding, setNewHolding] = useState<NewHoldingDraft>(EMPTY_NEW_HOLDING);
+  const [newHoldingLeverageText, setNewHoldingLeverageText] = useState('1');
   const [noteBody, setNoteBody] = useState('');
   const [prevOpen, setPrevOpen] = useState(open);
+
+  // 기존 종목의 역할·섹터·레버리지를 "변경" 링크로 바로 고치는 인라인 편집 상태 —
+  // 매매 저장과 별개로 즉시 반영된다(ADR-0062).
+  const [editingClassification, setEditingClassification] = useState(false);
+  const [classificationRoleId, setClassificationRoleId] = useState<string | null>(null);
+  const [classificationSectorId, setClassificationSectorId] = useState<string | null>(null);
+  const [classificationLeverageText, setClassificationLeverageText] = useState('1');
+  const [savingClassification, setSavingClassification] = useState(false);
 
   const holdingById = useMemo(() => new Map(holdings.map((h) => [h.id, h])), [holdings]);
 
@@ -207,9 +236,11 @@ export function ExecutionFormDialog({
       setQtyText('');
       setPriceText('');
       setExecutedAtLocal(toLocalInputValue(new Date().toISOString()));
-      setNewHolding({ groupId: groupOptions[0]?.id ?? '', ...EMPTY_NEW_HOLDING });
+      setNewHolding(EMPTY_NEW_HOLDING);
+      setNewHoldingLeverageText('1');
       setNoteBody('');
     }
+    setEditingClassification(false);
   }
 
   const selected = holdings.find((h) => h.id === holdingId);
@@ -235,8 +266,7 @@ export function ExecutionFormDialog({
     (isOpeningBalance || !!executedAt) &&
     !oversold &&
     (isNewHolding
-      ? !!newHolding.groupId &&
-        (isCash || newHolding.ticker.trim().length > 0) &&
+      ? (isCash || newHolding.ticker.trim().length > 0) &&
         newHolding.name.trim().length > 0 &&
         side === 'BUY'
       : !!selected);
@@ -285,6 +315,27 @@ export function ExecutionFormDialog({
     if (h?.account) setAccountFilter(h.account);
     // 매수 화면에서 종목을 고르면, 메모를 아직 안 썼다면 그 종목의 최근 매수 메모를 프리필한다.
     if (side === 'BUY') prefillNoteIfEmpty(id);
+    // 역할·섹터·레버리지 편집 드래프트를 이 종목의 현재 값으로 다시 맞춘다.
+    setEditingClassification(false);
+    setClassificationRoleId(h?.roleId ?? null);
+    setClassificationSectorId(h?.sectorId ?? null);
+    setClassificationLeverageText(String(h?.leverage ?? 1));
+  }
+
+  async function handleSaveClassification() {
+    if (!selected) return;
+    setSavingClassification(true);
+    try {
+      await onUpdateHoldingClassification({
+        holdingId: selected.id,
+        roleId: classificationRoleId,
+        sectorId: classificationSectorId,
+        leverage: parseFloat(classificationLeverageText) || 1,
+      });
+      setEditingClassification(false);
+    } finally {
+      setSavingClassification(false);
+    }
   }
 
   function handleSideChange(s: Side) {
@@ -341,10 +392,8 @@ export function ExecutionFormDialog({
     if (isNewHolding) {
       onSubmit({
         newHolding: {
-          groupId: newHolding.groupId,
           ticker: isCash ? null : newHolding.ticker.trim() || null,
           name: newHolding.name.trim(),
-          targetPctInGroup: 0,
           // 새 종목은 수량 0 으로 만들고 이 체결이 채운다 — 기초잔고가 아니다.
           qty: 0,
           avgPrice: 0,
@@ -352,7 +401,9 @@ export function ExecutionFormDialog({
           region: newHolding.region,
           assetType: newHolding.assetType,
           exposureRegion: isCash ? null : newHolding.exposureRegion,
-          sortOrder: 0,
+          roleId: newHolding.roleId,
+          sectorId: newHolding.sectorId,
+          leverage: parseFloat(newHoldingLeverageText) || 1,
         },
         execution,
         note,
@@ -421,49 +472,26 @@ export function ExecutionFormDialog({
             {isNewHolding ? (
               <>
                 <div className="flex flex-col gap-2.5 rounded-lg border border-dashed border-border p-2.5">
-                  <div className="flex gap-2.5">
-                    <div className="flex flex-1 flex-col gap-1.5">
-                      <Label className="text-[11px]">
-                        자산군 <span className="text-destructive">*</span>
-                      </Label>
-                      <Select
-                        items={groupOptions.map((g) => ({ label: g.name, value: g.id }))}
-                        value={newHolding.groupId}
-                        onValueChange={(v) => v && setNewHolding((d) => ({ ...d, groupId: v }))}
-                      >
-                        <SelectTrigger className="h-8 w-full text-xs">
-                          <SelectValue placeholder="선택" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {groupOptions.map((g) => (
-                            <SelectItem key={g.id} value={g.id}>
-                              {g.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex flex-1 flex-col gap-1.5">
-                      <Label className="text-[11px]">
-                        자산종류 <span className="text-destructive">*</span>
-                      </Label>
-                      <Select
-                        items={ASSET_TYPE_ITEMS}
-                        value={newHolding.assetType}
-                        onValueChange={(v) => v && setNewHolding((d) => ({ ...d, assetType: v as AssetType }))}
-                      >
-                        <SelectTrigger className="h-8 w-full text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ASSET_TYPE_ITEMS.map((item) => (
-                            <SelectItem key={item.value} value={item.value}>
-                              {item.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-[11px]">
+                      자산종류 <span className="text-destructive">*</span>
+                    </Label>
+                    <Select
+                      items={ASSET_TYPE_ITEMS}
+                      value={newHolding.assetType}
+                      onValueChange={(v) => v && setNewHolding((d) => ({ ...d, assetType: v as AssetType }))}
+                    >
+                      <SelectTrigger className="h-8 w-full text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ASSET_TYPE_ITEMS.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="flex gap-2.5">
                     <div className="flex w-20 flex-col gap-1.5">
@@ -567,6 +595,18 @@ export function ExecutionFormDialog({
                       />
                     </div>
                   </div>
+
+                  <ClassificationFieldsBlock
+                    roles={roles}
+                    roleId={newHolding.roleId}
+                    onRoleIdChange={(roleId) => setNewHolding((d) => ({ ...d, roleId }))}
+                    sectorId={newHolding.sectorId}
+                    onSectorIdChange={(sectorId) => setNewHolding((d) => ({ ...d, sectorId }))}
+                    sectors={sectors}
+                    onCreateSector={onCreateSector}
+                    leverageText={newHoldingLeverageText}
+                    onLeverageTextChange={setNewHoldingLeverageText}
+                  />
                 </div>
 
                 <label className="flex items-center gap-1.5 text-sm">
@@ -616,6 +656,58 @@ export function ExecutionFormDialog({
                     </ComboboxList>
                   </ComboboxContent>
                 </Combobox>
+              </div>
+            )}
+            {!isNewHolding && !editingExecution && selected && (
+              <div className="rounded-lg border border-dashed border-border p-2.5">
+                {editingClassification ? (
+                  <div className="flex flex-col gap-2.5">
+                    <ClassificationFieldsBlock
+                      roles={roles}
+                      roleId={classificationRoleId}
+                      onRoleIdChange={setClassificationRoleId}
+                      sectorId={classificationSectorId}
+                      onSectorIdChange={setClassificationSectorId}
+                      sectors={sectors}
+                      onCreateSector={onCreateSector}
+                      leverageText={classificationLeverageText}
+                      onLeverageTextChange={setClassificationLeverageText}
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingClassification(false)}
+                        className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+                      >
+                        취소
+                      </button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-6 text-[11px]"
+                        onClick={() => void handleSaveClassification()}
+                        disabled={savingClassification}
+                      >
+                        {savingClassification ? '저장 중...' : '저장'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-muted-foreground">
+                      {selected.roleId ? roles.find((r) => r.id === selected.roleId)?.name ?? '역할 미분류' : '역할 미분류'} ·{' '}
+                      {selected.sectorId ? sectors.find((s) => s.id === selected.sectorId)?.name ?? '섹터 미지정' : '섹터 미지정'}
+                      {selected.leverage !== 1 && ` · ${selected.leverage}X`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setEditingClassification(true)}
+                      className="shrink-0 text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      변경
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             {side === 'SELL' && selected && (

@@ -1,54 +1,56 @@
-import { useEffect } from 'react';
-import { useRouter } from 'next/router';
-import { cn } from '@/lib/utils';
-import type { AllocationAxis } from '@/types/domain';
+import { useEffect } from "react";
+import { useRouter } from "next/router";
+import { cn } from "@/lib/utils";
+import type { PortfolioAxis } from "@/types/domain";
 
-const AXIS_LABELS: Record<AllocationAxis, string> = {
-  group: '자산군',
-  market: '시장',
-};
-const AXES = Object.keys(AXIS_LABELS) as AllocationAxis[];
-
-/** URL 쿼리 `?axis=`에서 현재 축을 읽는다 — 없거나 이상한 값이면 자산군(기본). */
-export function useAxisFromQuery(): AllocationAxis {
+/** URL 쿼리 `?axis=`에서 현재 축을 읽는다 — 없으면 `role`(기본). */
+export function useAxisFromQuery(): PortfolioAxis {
   const { query } = useRouter();
   const raw = Array.isArray(query.axis) ? query.axis[0] : query.axis;
-  return raw === 'market' || raw === 'group' ? raw : 'group';
+  return raw === "market" ? "market" : "role";
 }
 
-/** 축 전환 — 새 UI 프리미티브 대신 plain 세그먼트 버튼(ADR-0051, `/holdings`·`/journal`과 동일). */
-export function AxisTabs({ axis }: { axis: AllocationAxis }) {
+const AXIS_ITEMS: { id: PortfolioAxis; label: string }[] = [
+  { id: "role", label: "역할" },
+  { id: "market", label: "시장" },
+];
+
+/**
+ * `/portfolio`의 축 전환 — 고정 2-way(역할/시장, ADR-0062). 더 이상 유저가 탭을 만들거나
+ * 순서를 바꾸지 않는다(자유 커스텀 탭 시스템 폐기) — plain 세그먼트 버튼(ADR-0051 패턴).
+ */
+export function AxisTabs({ axis, isLocked }: { axis: PortfolioAxis; isLocked: boolean }) {
   const router = useRouter();
   const { isReady, pathname, query } = router;
   const rawAxis = Array.isArray(query.axis) ? query.axis[0] : query.axis;
 
-  // 쿼리가 없거나 이상한 값이면 ?axis=group 을 URL에 채워 넣어 항상 명시 상태로 둔다
-  // (useAxisFromQuery는 이미 'group'을 반환하므로 화면 깜빡임 없이 주소만 맞춰진다).
   useEffect(() => {
     if (!isReady) return;
-    if (rawAxis === 'group' || rawAxis === 'market') return;
-    void router.replace({ pathname, query: { axis: 'group' } }, undefined, { shallow: true });
+    if (rawAxis) return;
+    void router.replace({ pathname, query: { axis: "role" } }, undefined, { shallow: true });
   }, [isReady, rawAxis, pathname, router]);
 
-  function select(next: AllocationAxis) {
+  function select(next: PortfolioAxis) {
+    if (isLocked) return;
     void router.replace({ pathname, query: { axis: next } }, undefined, { shallow: true });
   }
 
   return (
-    <div className="mb-4 flex gap-1.5">
-      {AXES.map((a) => (
+    <div className="mb-4 flex flex-wrap items-center gap-1.5">
+      {AXIS_ITEMS.map((item) => (
         <button
-          key={a}
+          key={item.id}
           type="button"
-          onClick={() => select(a)}
+          onClick={() => select(item.id)}
+          disabled={isLocked}
           className={cn(
-            'rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors',
-            axis === a
-              ? 'border-primary bg-accent text-accent-foreground'
-              : 'border-border text-muted-foreground hover:text-foreground',
+            "rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-50",
+            axis === item.id
+              ? "border-primary bg-accent text-accent-foreground"
+              : "border-border text-muted-foreground hover:text-foreground",
           )}
         >
-          {AXIS_LABELS[a]}
+          {item.label}
         </button>
       ))}
     </div>

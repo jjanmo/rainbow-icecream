@@ -415,7 +415,8 @@ update holdings set exposure_region = null
   where asset_type = 'ETF'
     and (name ~ '국고채|국채|채권|Treasury' or name ~ '금속|광산|희소금속|희토류|원자재|골드|은 ETF');
 
--- axis_targets: 시장 축의 버킷별 목표 비중. 자산군 축은 asset_groups.target_pct.
+-- axis_targets: 시장 축의 버킷별 목표 비중. (역할 축도 나중에 이 테이블을 같이 쓰게
+-- 된다 — ADR-0062, axis CHECK 제약 확장은 아래 역할/섹터 마이그레이션 블록 참고.)
 -- (변동성 축은 분류 기준 미확정으로 보류 — ADR-0058 ③.)
 create table if not exists axis_targets (
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
@@ -464,4 +465,325 @@ update holdings set account = '일반계좌' where account in ('파킹통장', '
 alter table holdings drop constraint if exists holdings_asset_type_check;
 alter table holdings add constraint holdings_asset_type_check
   check (asset_type is null or asset_type in ('STOCK', 'ETF', 'ETN', 'FUND', 'BOND', 'GOLD', 'CASH'));
+
+-- ---------------------------------------------------------------------------
+-- Migration: 자산군을 "포트폴리오 탭" 체계로 통합 (ADR-0062). `시장` 축은 그대로 두고,
+-- `자산군`은 더 이상 특별 취급되는 축이 아니라 유저가 만드는 다른 탭과 완전히 동등한
+-- custom_tabs 행 하나가 된다(kind 구분 컬럼 없음). 종목-버킷 배정은 holdings의 컬럼이
+-- 아니라 별도 매핑 테이블로 — 탭이 몇 개든 늘어날 수 있어 컬럼 하나로는 표현이 안 되기
+-- 때문이다. 배정 row가 없으면 그 탭에서 "미배정" (부재-기반, ADR-0059 정신 계승) — 버킷
+-- 삭제 시 on delete cascade로 배정도 같이 사라져 자동으로 미배정이 된다.
+--
+-- 1차 배포에서는 asset_groups를 drop이 아니라 rename만 한다(holdings.group_id 컬럼도
+-- 그대로 둔다) — 앱이 새 테이블 기준으로 정상 동작하는 걸 확인한 뒤 별도 후속
+-- 마이그레이션에서 완전히 제거한다. Idempotent — asset_groups가 이미 없으면(=이미 한 번
+-- 실행됨) 백필 블록 전체를 건너뛴다.
+-- ---------------------------------------------------------------------------
+create table if not exists custom_tabs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  name text not null,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists custom_tab_buckets (
+  id uuid primary key default gen_random_uuid(),
+  tab_id uuid not null references custom_tabs(id) on delete cascade,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  name text not null,
+  target_pct numeric not null default 0 check (target_pct between 0 and 100),
+  sort_order int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- sort_order: 탭 안에서의 드래그 순서 — 예전 holdings.sort_order(자산군 탭 전용이었던 것)를
+-- "탭마다 독립적인 순서"로 일반화한 것.
+create table if not exists custom_tab_holding_buckets (
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  holding_id uuid not null references holdings(id) on delete cascade,
+  tab_id uuid not null references custom_tabs(id) on delete cascade,
+  bucket_id uuid not null references custom_tab_buckets(id) on delete cascade,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now(),
+  primary key (holding_id, tab_id)
+);
+
+create index if not exists custom_tabs_user_idx on custom_tabs (user_id);
+create index if not exists custom_tab_buckets_tab_idx on custom_tab_buckets (tab_id);
+create index if not exists custom_tab_holding_buckets_tab_idx on custom_tab_holding_buckets (tab_id);
+create index if not exists custom_tab_holding_buckets_bucket_idx on custom_tab_holding_buckets (bucket_id);
+
+drop trigger if exists custom_tabs_set_updated_at on custom_tabs;
+create trigger custom_tabs_set_updated_at
+  before update on custom_tabs
+  for each row execute function set_updated_at();
+
+drop trigger if exists custom_tab_buckets_set_updated_at on custom_tab_buckets;
+create trigger custom_tab_buckets_set_updated_at
+  before update on custom_tab_buckets
+  for each row execute function set_updated_at();
+
+alter table custom_tabs enable row level security;
+alter table custom_tab_buckets enable row level security;
+alter table custom_tab_holding_buckets enable row level security;
+
+drop policy if exists "own custom tabs" on custom_tabs;
+create policy "own custom tabs" on custom_tabs
+  for all
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+drop policy if exists "own custom tab buckets" on custom_tab_buckets;
+create policy "own custom tab buckets" on custom_tab_buckets
+  for all
+  using (user_id = auth.uid())
+  with check (
+    user_id = auth.uid()
+    and tab_id in (select id from custom_tabs where user_id = auth.uid())
+  );
+
+drop policy if exists "own custom tab holding buckets" on custom_tab_holding_buckets;
+create policy "own custom tab holding buckets" on custom_tab_holding_buckets
+  for all
+  using (user_id = auth.uid())
+  with check (
+    user_id = auth.uid()
+    and holding_id in (select id from holdings where user_id = auth.uid())
+    and tab_id in (select id from custom_tabs where user_id = auth.uid())
+    and bucket_id in (select id from custom_tab_buckets where user_id = auth.uid())
+  );
+
+-- 백필: asset_groups가 아직 원래 이름일 때만 실행(재실행 안전).
+do $$
+begin
+  if to_regclass('public.asset_groups') is not null then
+    -- 1) 유저당 "자산군" 탭 1개 생성 (기존 그룹들의 새 부모 탭). 그룹이 하나도 없이
+    --    종목만 있는 유저도 놓치지 않도록 holdings 쪽도 함께 본다.
+    insert into custom_tabs (user_id, name, sort_order)
+    select distinct user_id, '자산군', -1 from asset_groups
+    union
+    select distinct h.user_id, '자산군', -1 from holdings h
+      where not exists (select 1 from asset_groups ag where ag.user_id = h.user_id);
+
+    -- 2) 그룹 → 버킷 (id를 그대로 재사용해 리매핑 테이블 없이 다음 단계로 넘어간다).
+    insert into custom_tab_buckets (id, tab_id, user_id, name, target_pct, sort_order, created_at)
+    select ag.id, ct.id, ag.user_id, ag.name, ag.target_pct, ag.sort_order, ag.created_at
+    from asset_groups ag
+    join custom_tabs ct on ct.user_id = ag.user_id and ct.name = '자산군';
+
+    -- 3) 종목 group_id → 배정 row (holdings.sort_order를 배정별 sort_order로 이관).
+    insert into custom_tab_holding_buckets (user_id, holding_id, tab_id, bucket_id, sort_order)
+    select h.user_id, h.id, ct.id, h.group_id, h.sort_order
+    from holdings h
+    join custom_tabs ct on ct.user_id = h.user_id and ct.name = '자산군'
+    where h.group_id is not null;
+
+    -- 4) 검증 — 행 수가 안 맞으면 여기서 멈추고 트랜잭션 전체를 롤백한다.
+    if (select count(*) from custom_tab_buckets) <> (select count(*) from asset_groups) then
+      raise exception '백필 불일치: custom_tab_buckets(%) <> asset_groups(%)',
+        (select count(*) from custom_tab_buckets), (select count(*) from asset_groups);
+    end if;
+
+    if (select count(*) from custom_tab_holding_buckets)
+       <> (select count(*) from holdings where group_id is not null) then
+      raise exception '백필 불일치: custom_tab_holding_buckets(%) <> holdings.group_id 있는 행(%)',
+        (select count(*) from custom_tab_holding_buckets),
+        (select count(*) from holdings where group_id is not null);
+    end if;
+
+    -- 5) drop이 아니라 rename — holdings.group_id 컬럼도 남겨둔다(앱은 더 이상 안 씀).
+    --    완전 제거는 앱 동작 확인 후 별도 후속 마이그레이션에서.
+    alter table asset_groups rename to asset_groups_deprecated;
+  end if;
+end $$;
+
+-- holdings RLS: group_id는 더 이상 앱이 쓰지 않으므로 관련 절을 없앤다(컬럼 자체는 남아있어도
+-- 이 정책은 이제 user_id만 확인한다).
+drop policy if exists "own holdings" on holdings;
+create policy "own holdings" on holdings for all
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+-- ---------------------------------------------------------------------------
+-- Migration: 버킷(탭 안의 자산군/그룹)에 옵션 설명 추가, 최대 50자. Idempotent.
+-- ---------------------------------------------------------------------------
+alter table custom_tab_buckets add column if not exists description text;
+
+alter table custom_tab_buckets drop constraint if exists custom_tab_buckets_description_length;
+alter table custom_tab_buckets add constraint custom_tab_buckets_description_length
+  check (description is null or char_length(description) <= 50);
+
+-- ---------------------------------------------------------------------------
+-- Migration: 자유 커스텀 탭 시스템을 폐기하고 "역할"(고정 5)+"섹터"(자유 추가, 역할에
+-- 종속) 컬럼 기반 분류로 교체 (ADR-0062). 종목 하나는 역할 하나·섹터 하나만 가지므로
+-- N:M 매핑 테이블이 아니라 holdings의 직접 컬럼으로 둔다(asset_type과 같은 패턴).
+-- 레버리지는 계산에 전혀 안 쓰는 표시 전용 메타데이터. 밴드 판정·정책 한도·키워드
+-- 자동 제안·분류 이력·측정값(베타) 경고는 의도적으로 범위 밖(docs/adr/0062 참고).
+-- Idempotent.
+-- ---------------------------------------------------------------------------
+alter table holdings add column if not exists role text;
+alter table holdings drop constraint if exists holdings_role_check;
+alter table holdings add constraint holdings_role_check
+  check (role is null or role in ('GROWTH', 'DEFENSE', 'INCOME', 'HEDGE', 'CASH'));
+-- null = 미분류.
+comment on column holdings.role is '역할(왜 샀나) — 성장/방어/인컴/헤지/현금성 고정 5개, 총자산 기준 목표(axis_targets). null=미분류. ADR-0062.';
+
+create table if not exists sectors (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  name text not null,
+  -- "이 섹터가 속한 역할 버킷 내에서"의 목표% — 역할처럼 100% 합계를 강제하지 않는다
+  -- (섹터 하나가 여러 역할에 걸치는 건 드문 것으로 간주해 신경 쓰지 않는다).
+  target_pct numeric not null default 0 check (target_pct >= 0 and target_pct <= 100),
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+comment on table sectors is '섹터(무엇에 베팅했는지) — 역할에 종속적으로만 화면에 나타남. target_pct는 소속 역할 버킷 내 목표%, 100% 합계 강제 없음. ADR-0062.';
+
+alter table holdings add column if not exists sector_id uuid references sectors(id) on delete set null;
+alter table holdings add column if not exists leverage numeric not null default 1 check (leverage > 0);
+comment on column holdings.sector_id is '섹터(무엇에 베팅했나) — sectors FK, 역할에 종속. null=미지정. ADR-0062.';
+comment on column holdings.leverage is '기초자산 대비 배수, 기본 1 — 비중/한도 계산엔 안 쓰는 순수 표시용. ADR-0062.';
+
+create index if not exists holdings_user_role_idx on holdings (user_id, role);
+create index if not exists holdings_sector_idx on holdings (sector_id);
+
+alter table sectors enable row level security;
+drop policy if exists "own sectors" on sectors;
+create policy "own sectors" on sectors
+  for all
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+-- axis_targets 재사용: market은 그대로, role 축 추가.
+alter table axis_targets drop constraint if exists axis_targets_axis_check;
+alter table axis_targets add constraint axis_targets_axis_check check (axis in ('market', 'role'));
+comment on table axis_targets is '시장/역할 축의 버킷별 목표 비중. 섹터는 sectors.target_pct를 쓴다(역할에 종속). ADR-0058, ADR-0062.';
+
+-- 실데이터 이관 — 이 블록은 custom_tabs가 아직 존재할 때만 의미가 있다(1회성).
+do $$
+begin
+  if to_regclass('public.custom_tabs') is not null then
+    -- "역할기반" 탭의 "원자재" 버킷 종목을 "성장" 버킷으로 재배정(사용자 확인 결과
+    -- "원자재"는 역할이 아니라 섹터 성격의 라벨이라 "헤지"로 개명하기로 함).
+    update custom_tab_holding_buckets chb
+    set bucket_id = (
+      select b2.id from custom_tab_buckets b2
+      where b2.tab_id = (select b1.tab_id from custom_tab_buckets b1 where b1.id = chb.bucket_id)
+        and b2.name = '성장'
+    )
+    where chb.bucket_id in (select id from custom_tab_buckets where name = '원자재');
+
+    -- "역할기반" 탭 배정을 holdings.role로 이관.
+    update holdings h
+    set role = case b.name
+      when '성장' then 'GROWTH' when '방어' then 'DEFENSE' when '인컴' then 'INCOME'
+      when '현금성' then 'CASH' when '헤지' then 'HEDGE'
+    end
+    from custom_tab_holding_buckets chb
+    join custom_tab_buckets b on b.id = chb.bucket_id
+    join custom_tabs t on t.id = b.tab_id
+    where chb.holding_id = h.id and t.name = '역할기반' and t.user_id = h.user_id;
+
+    -- 역할 목표% 시드 — "역할기반" 탭을 실제로 갖고 있던 유저에게만.
+    insert into axis_targets (user_id, axis, bucket, target_pct)
+    select t.user_id, 'role', v.bucket, v.target_pct
+    from custom_tabs t
+    cross join (values ('GROWTH', 30), ('DEFENSE', 25), ('INCOME', 30), ('HEDGE', 5), ('CASH', 10)) as v(bucket, target_pct)
+    where t.name = '역할기반'
+    on conflict (user_id, axis, bucket) do update set target_pct = excluded.target_pct;
+
+    -- 커스텀탭 시스템 전체 폐기(자산군 탭 포함, cascade로 버킷·배정도 함께 삭제).
+    drop table custom_tab_holding_buckets;
+    drop table custom_tab_buckets;
+    drop table custom_tabs;
+  end if;
+end $$;
+
+-- 참고: asset_groups_deprecated / holdings.group_id / holdings.sort_order /
+-- holdings.target_pct_in_group은 이번 마이그레이션과 무관한 더 오래된 기술부채라
+-- 여기서 같이 정리하지 않는다 — 역할/섹터 구현 완료 후 별도 후속 작업.
+
+-- ---------------------------------------------------------------------------
+-- Migration: 역할·섹터를 하나의 테이블로 통합 (ADR-0063, ADR-0062를 일부 대체).
+-- 역할도 섹터처럼 사용자가 계속 추가·삭제할 수 있는 동적 목록이 된다 — 더 이상
+-- 고정 5개 enum이 아니다. 이름/설명/목표%/순서라는 같은 모양의 데이터라 axis
+-- 구분 컬럼 하나로 합친다. 기본 역할은 성장/방어/인컴/안전 4개로 리셋한다(기존
+-- "헤지"는 종목이 없어 그대로 소멸, "현금성"은 "안전"으로 재매핑). Idempotent.
+-- ---------------------------------------------------------------------------
+create table if not exists axis_categories (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  axis text not null check (axis in ('role', 'sector')),
+  name text not null,
+  description text check (description is null or char_length(description) <= 50),
+  -- 역할: 총자산 기준, 합계 100% 강제(앱에서 검증). 섹터: 속한 역할 내 참고용, 강제 없음.
+  target_pct numeric not null default 0 check (target_pct >= 0 and target_pct <= 100),
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+comment on table axis_categories is '역할·섹터 통합 테이블 — axis로 구분. 역할은 총자산 기준 목표%(합계 100% 강제, 앱단), 섹터는 소속 역할 내 참고용 목표%(강제 없음). description은 선택, 최대 50자.';
+
+create index if not exists axis_categories_user_axis_idx on axis_categories (user_id, axis);
+
+alter table axis_categories enable row level security;
+drop policy if exists "own axis categories" on axis_categories;
+create policy "own axis categories" on axis_categories
+  for all
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+-- 실데이터 이관 — 이 블록은 holdings.role(옛 고정 enum)이 아직 존재할 때만 의미가 있다(1회성).
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_name = 'holdings' and column_name = 'role') then
+    -- 기본 역할 4개 시드 (기존 역할 데이터를 가진 유저에게만).
+    insert into axis_categories (user_id, axis, name, target_pct, sort_order)
+    select distinct h.user_id, 'role', v.name, v.target_pct, v.sort_order
+    from holdings h
+    cross join (values ('성장', 30, 0), ('방어', 25, 1), ('인컴', 30, 2), ('안전', 15, 3)) as v(name, target_pct, sort_order)
+    where h.role is not null;
+
+    -- 기존 holdings.role(GROWTH/DEFENSE/INCOME/HEDGE/CASH) → 새 axis_categories로 이관.
+    -- 헤지는 종목이 없어 매핑 대상이 없고, 현금성은 "안전"으로 합류한다.
+    alter table holdings add column if not exists role_id uuid references axis_categories(id) on delete set null;
+
+    update holdings h
+    set role_id = (
+      select ac.id from axis_categories ac
+      where ac.user_id = h.user_id and ac.axis = 'role' and ac.name = case h.role
+        when 'GROWTH' then '성장' when 'DEFENSE' then '방어' when 'INCOME' then '인컴' when 'CASH' then '안전'
+      end
+    )
+    where h.role in ('GROWTH', 'DEFENSE', 'INCOME', 'CASH');
+
+    create index if not exists holdings_role_id_idx on holdings (role_id);
+
+    alter table holdings drop constraint if exists holdings_role_check;
+    alter table holdings drop column role;
+
+    -- 섹터(sectors)를 axis_categories로 이관하고 holdings.sector_id가
+    -- axis_categories를 가리키도록 FK를 다시 건다.
+    if to_regclass('public.sectors') is not null then
+      insert into axis_categories (id, user_id, axis, name, description, target_pct, sort_order, created_at)
+      select id, user_id, 'sector', name, null, target_pct, sort_order, created_at from sectors;
+
+      alter table holdings drop constraint if exists holdings_sector_id_fkey;
+      alter table holdings add constraint holdings_sector_id_fkey
+        foreign key (sector_id) references axis_categories(id) on delete set null;
+
+      drop table sectors;
+    end if;
+
+    -- axis_targets: 역할 목표%는 이제 axis_categories.target_pct에 직접 저장하므로
+    -- 여기선 다시 시장 전용으로 되돌린다.
+    delete from axis_targets where axis = 'role';
+    alter table axis_targets drop constraint if exists axis_targets_axis_check;
+    alter table axis_targets add constraint axis_targets_axis_check check (axis in ('market'));
+    comment on table axis_targets is '시장 축의 버킷별 목표 비중. 역할·섹터는 axis_categories.target_pct를 쓴다. ADR-0058, ADR-0063.';
+  end if;
+end $$;
 

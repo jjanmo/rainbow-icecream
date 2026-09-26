@@ -25,6 +25,7 @@ export function useComboboxSearch<T>(items: T[], getLabel: (item: T) => string) 
   }, [items, query, contains, getLabel]);
 
   return {
+    query,
     filteredItems,
     inputProps: {
       onChange: (e: ChangeEvent<HTMLInputElement>) => setQuery(e.currentTarget.value),

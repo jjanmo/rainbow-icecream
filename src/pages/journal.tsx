@@ -39,8 +39,8 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { useAddExecution, useDeleteExecution, useExecutions, useUpdateExecution } from '@/hooks/useExecutions';
-import { useGroups } from '@/hooks/useGroups';
-import { useAddHolding, useAllHoldings, useHoldings } from '@/hooks/useHoldings';
+import { useAddHolding, useAllHoldings, useHoldings, useUpdateHolding } from '@/hooks/useHoldings';
+import { useAddAxisCategory, useAxisCategories } from '@/hooks/useAxisCategories';
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { useHistoricalFxRates } from '@/hooks/useHistoricalFxRates';
 import { useDeleteTradeNote, useTradeNotes, useUpsertTradeNote } from '@/hooks/useTradeNotes';
@@ -173,7 +173,6 @@ function notesForSide(
 }
 
 export default function JournalPage() {
-  const groupsQuery = useGroups();
   const holdingsQuery = useHoldings();
   const allHoldingsQuery = useAllHoldings();
   const executionsQuery = useExecutions();
@@ -182,8 +181,12 @@ export default function JournalPage() {
   const updateExecution = useUpdateExecution();
   const deleteExecution = useDeleteExecution();
   const addHolding = useAddHolding();
+  const updateHolding = useUpdateHolding();
   const upsertTradeNote = useUpsertTradeNote();
   const deleteTradeNote = useDeleteTradeNote();
+  const roleCategoriesQuery = useAxisCategories('role');
+  const sectorCategoriesQuery = useAxisCategories('sector');
+  const addAxisCategory = useAddAxisCategory();
 
   const now = new Date();
   const [cursor, setCursor] = useState({ year: now.getFullYear(), month: now.getMonth() });
@@ -287,19 +290,13 @@ export default function JournalPage() {
   }, [cursor]);
 
   const isLoading =
-    groupsQuery.isLoading ||
     holdingsQuery.isLoading ||
     allHoldingsQuery.isLoading ||
     executionsQuery.isLoading ||
     tradeNotesQuery.isLoading;
   const isError =
-    groupsQuery.isError ||
-    holdingsQuery.isError ||
-    allHoldingsQuery.isError ||
-    executionsQuery.isError ||
-    tradeNotesQuery.isError;
-  const error =
-    groupsQuery.error ?? holdingsQuery.error ?? allHoldingsQuery.error ?? executionsQuery.error ?? tradeNotesQuery.error;
+    holdingsQuery.isError || allHoldingsQuery.isError || executionsQuery.isError || tradeNotesQuery.isError;
+  const error = holdingsQuery.error ?? allHoldingsQuery.error ?? executionsQuery.error ?? tradeNotesQuery.error;
 
   // range 모드는 [start,end] 구간으로, days 모드는 낱개로 고른 날짜 집합으로 거른다
   // — 서로 배타적이라 지금 켜진 모드 하나만 본다.
@@ -479,6 +476,30 @@ export default function JournalPage() {
     setDeleteTarget(null);
   }
 
+  /** 매매 모달의 섹터 콤보박스 "+ 새 섹터 만들기"에서 호출 — 목표% 0으로 만든다. */
+  async function handleCreateSector(name: string) {
+    const sortOrder = sectorCategoriesQuery.data?.length ?? 0;
+    return addAxisCategory.mutateAsync({ axis: 'sector', name, description: null, targetPct: 0, sortOrder });
+  }
+
+  /** 매매 모달의 "변경" 링크 — 매매 저장과 무관하게 역할·섹터·레버리지만 바로 바꾼다. */
+  async function handleUpdateHoldingClassification(input: {
+    holdingId: string;
+    roleId: Holding['roleId'];
+    sectorId: string | null;
+    leverage: number;
+  }) {
+    try {
+      await updateHolding.mutateAsync({
+        id: input.holdingId,
+        patch: { roleId: input.roleId, sectorId: input.sectorId, leverage: input.leverage },
+      });
+    } catch (err) {
+      console.error('Failed to update holding classification', err);
+      toast.error('분류 저장에 실패했습니다.');
+    }
+  }
+
   async function handleSubmit(submit: ExecutionSubmit) {
     let holding: Holding;
     let execution: Execution;
@@ -583,9 +604,7 @@ export default function JournalPage() {
           >
             기초잔고 보기
           </Button>
-          <Button onClick={openAddDialog} disabled={(groupsQuery.data ?? []).length === 0}>
-            + 매매 추가
-          </Button>
+          <Button onClick={openAddDialog}>+ 매매 추가</Button>
         </div>
       </div>
 
@@ -614,8 +633,6 @@ export default function JournalPage() {
           <Skeleton className="h-64 w-full rounded-lg" />
           <Skeleton className="h-40 w-full rounded-lg" />
         </div>
-      ) : (groupsQuery.data ?? []).length === 0 ? (
-        <p className="text-sm text-muted-foreground">먼저 포트폴리오에서 자산군을 추가해주세요.</p>
       ) : viewMode === 'holding' ? (
         <div className="flex flex-col gap-5">
           <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
@@ -804,8 +821,11 @@ export default function JournalPage() {
         onOpenChange={setDialogOpen}
         holdings={holdings}
         executions={executionsQuery.data ?? []}
-        groupOptions={(groupsQuery.data ?? []).map((g) => ({ id: g.id, name: g.name }))}
         tradeNotes={tradeNotes}
+        roles={roleCategoriesQuery.data ?? []}
+        sectors={sectorCategoriesQuery.data ?? []}
+        onCreateSector={handleCreateSector}
+        onUpdateHoldingClassification={handleUpdateHoldingClassification}
         onSubmit={handleSubmit}
         editingExecution={editingExecution}
         onUpdate={handleUpdate}

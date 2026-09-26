@@ -1,8 +1,14 @@
 import { useMemo, useState } from 'react';
 import { ResponsiveContainer, Tooltip, Treemap } from 'recharts';
 import { colorFor, hexToHue } from '@/lib/calc/color';
-import { UNGROUPED_KEY, type HoldingCalc } from '@/lib/calc/rebalance';
+import type { HoldingCalc } from '@/lib/calc/rebalance';
 import { fmtSigned, fmtWon, shortHoldingLabel } from '@/lib/format';
+
+/** 종목 하나를 어느 버킷으로 묶을지 — 선택된 포트폴리오 탭(자산군/시장/커스텀
+ * 탭) 기준으로 호출측이 정한다(ADR-0062). null이면 그 탭에서 미배정. */
+export type HeatmapBucketOf = (holding: HoldingCalc) => { id: string; name: string; color: string } | null;
+
+const UNASSIGNED_BUCKET_ID = '__heatmap_unassigned__';
 
 // finviz류 시장 히트맵과 같은 채도를 내려면 앱 전역의 GOOD_COLOR(민트)/LOSS_COLOR보다
 // 훨씬 진한 색이 필요해서, 여기서만 쓰는 전용 스케일이다(lib/calc/rebalance.ts의
@@ -121,19 +127,21 @@ interface HeatmapGroupNode {
 
 function buildHeatmapData(
   holdings: HoldingCalc[],
+  bucketOf: HeatmapBucketOf,
   dailyChangeByTicker: Record<string, number>,
   isLoadingDailyChanges: boolean,
 ): HeatmapGroupNode[] {
-  // active-only fetchHoldings() 결과지만 group_id가 null일 수 있다 — 자산군이
-  // 삭제된 미지정 종목(ADR-0059). groupName도 빈 문자열이라 여기서 "미지정"으로 표시한다.
+  // 선택된 탭에서 미배정인 종목(bucketOf가 null)은 "미배정"으로 표시한다.
   const byGroup = new Map<string, HeatmapGroupNode>();
   for (const h of holdings) {
     if (h.value <= 0) continue; // 트리맵 면적은 양수만 가능 — 수량 0인 종목 등은 제외
-    const groupKey = h.groupId ?? UNGROUPED_KEY;
-    const groupLabel = h.groupName || '미지정';
+    const bucket = bucketOf(h);
+    const groupKey = bucket?.id ?? UNASSIGNED_BUCKET_ID;
+    const groupLabel = bucket?.name || '미배정';
+    const groupColor = bucket?.color ?? 'oklch(70% 0 0)';
     let group = byGroup.get(groupKey);
     if (!group) {
-      group = { name: groupLabel, groupId: groupKey, color: h.groupColor, children: [] };
+      group = { name: groupLabel, groupId: groupKey, color: groupColor, children: [] };
       byGroup.set(groupKey, group);
     }
     // ticker가 없는 현금성 자산은 시세 자체가 없어 등락도 없다(항상 중립) — API 조회 대상이 아니다.
@@ -151,7 +159,7 @@ function buildHeatmapData(
       value: h.value,
       groupName: groupLabel,
       groupId: groupKey,
-      groupColor: h.groupColor,
+      groupColor,
       isFirstInGroup: false,
     });
   }
@@ -354,18 +362,22 @@ function HeatmapLegend() {
 
 export function HoldingsHeatmap({
   holdings,
+  bucketOf,
   dailyChangeByTicker,
   isLoadingDailyChanges,
 }: {
   holdings: HoldingCalc[];
+  /** 선택된 포트폴리오 탭 기준 그룹핑 함수 — 호출측(`/holdings`)이 탭을 하나
+   * 선택했을 때만 이 컴포넌트를 렌더한다(ADR-0062, 탭 미선택 시 히트맵 비활성). */
+  bucketOf: HeatmapBucketOf;
   dailyChangeByTicker: Record<string, number>;
   isLoadingDailyChanges: boolean;
 }) {
   const [zoomedGroupId, setZoomedGroupId] = useState<string | null>(null);
 
   const allData = useMemo(
-    () => buildHeatmapData(holdings, dailyChangeByTicker, isLoadingDailyChanges),
-    [holdings, dailyChangeByTicker, isLoadingDailyChanges],
+    () => buildHeatmapData(holdings, bucketOf, dailyChangeByTicker, isLoadingDailyChanges),
+    [holdings, bucketOf, dailyChangeByTicker, isLoadingDailyChanges],
   );
 
   const zoomedGroup = zoomedGroupId ? allData.find((g) => g.groupId === zoomedGroupId) : undefined;
@@ -387,10 +399,10 @@ export function HoldingsHeatmap({
             onClick={() => setZoomedGroupId(null)}
             className="flex items-center gap-1 font-semibold text-foreground hover:underline"
           >
-            ← 전체 자산군
+            ← 전체
           </button>
         ) : (
-          <span className="text-muted-foreground">전체 자산군 — 자산군을 클릭하면 확대됩니다</span>
+          <span className="text-muted-foreground">전체 — 클릭하면 확대됩니다</span>
         )}
         {zoomedGroup && <span className="text-muted-foreground">/ {zoomedGroup.name}</span>}
       </div>
