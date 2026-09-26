@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Download } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,8 +21,9 @@ import { useDailyReturns } from '@/hooks/useDailyReturns';
 import { useAddHolding, useDeleteHolding, useUpdateHolding } from '@/hooks/useHoldings';
 import { useRebalanceData } from '@/hooks/useRebalanceData';
 import { UNGROUPED_KEY } from '@/lib/calc/rebalance';
+import { holdingDownloadLabel } from '@/lib/format';
 import type { Holding, NewHolding } from '@/types/domain';
-import { cn } from '@/lib/utils';
+import { cn, downloadTextFile } from '@/lib/utils';
 
 type HoldingsView = 'table' | 'heatmap';
 const VIEW_LABELS: Record<HoldingsView, string> = { table: '목록', heatmap: '히트맵' };
@@ -87,6 +89,11 @@ export default function HoldingsPage() {
     setDeleteTarget(null);
   }
 
+  function handleDownload() {
+    const content = filteredHoldings.map(holdingDownloadLabel).join(', ');
+    downloadTextFile(`보유종목_${new Date().toISOString().slice(0, 10)}.txt`, content);
+  }
+
   return (
     <div>
       <div className="mb-3.5 flex flex-wrap items-start justify-between gap-4">
@@ -114,7 +121,18 @@ export default function HoldingsPage() {
               groupOptions={filterGroupOptions}
               accountOptions={accountOptions}
             />
-            <span className="shrink-0 text-xs text-muted-foreground">총 {filteredHoldings.length}개 종목</span>
+            <div className="flex shrink-0 items-center gap-3">
+              <span className="text-xs text-muted-foreground">총 {filteredHoldings.length}개 종목</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownload}
+                disabled={filteredHoldings.length === 0}
+              >
+                <Download className="size-4" />
+                다운로드
+              </Button>
+            </div>
           </div>
 
           <div className="mb-3.5 flex gap-1.5">

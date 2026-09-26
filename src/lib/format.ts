@@ -14,6 +14,17 @@ export function shortHoldingLabel(holding: {
   return holding.name;
 }
 
+/**
+ * 종목 목록 다운로드용 표시 형식 — "종목명(코드)"(국내) 또는 "종목명(티커)"(해외).
+ * 코드/티커가 없는 현금성 자산(ticker: null)은 이름만 반환한다.
+ */
+export function holdingDownloadLabel(holding: {
+  name: string;
+  ticker: string | null;
+}): string {
+  return holding.ticker ? `${holding.name}(${holding.ticker})` : holding.name;
+}
+
 export function fmtWon(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "₩0";
   return "₩" + Math.round(n).toLocaleString("ko-KR");
