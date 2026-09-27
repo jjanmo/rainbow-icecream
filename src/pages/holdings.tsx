@@ -23,7 +23,7 @@ import { useAddHolding, useDeleteHolding, useUpdateHolding } from '@/hooks/useHo
 import { useRebalanceData } from '@/hooks/useRebalanceData';
 import { colorFor, hueForGroupIndex } from '@/lib/calc/color';
 import type { HoldingCalc } from '@/lib/calc/rebalance';
-import { holdingDownloadLabel } from '@/lib/format';
+import { buildHoldingsMarkdownTable } from '@/lib/holdingsExport';
 import type { Holding, NewHolding } from '@/types/domain';
 import { cn, downloadTextFile } from '@/lib/utils';
 
@@ -108,8 +108,8 @@ export default function HoldingsPage() {
   }
 
   function handleDownload() {
-    const content = filteredHoldings.map(holdingDownloadLabel).join(', ');
-    downloadTextFile(`보유종목_${new Date().toISOString().slice(0, 10)}.txt`, content);
+    const content = buildHoldingsMarkdownTable(filteredHoldings, roleNameById, sectorNameById);
+    downloadTextFile(`보유종목_${new Date().toISOString().slice(0, 10)}.md`, content);
   }
 
   return (
