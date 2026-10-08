@@ -142,6 +142,7 @@ export function ExecutionFormDialog({
   onUpdateHoldingClassification,
   onSubmit,
   editingExecution,
+  editingHolding,
   onUpdate,
 }: {
   open: boolean;
@@ -169,6 +170,10 @@ export function ExecutionFormDialog({
    * 수 없다(다른 종목으로 옮기는 건 별도 리플레이 대상이 둘이 되는 문제라 지원하지
    * 않는다). 근거는 이 체결에 달린 것을 그대로 불러와 수정할 수 있다. */
   editingExecution?: Execution | null;
+  /** 수정 중인 체결의 종목 — 삭제된 종목 포함 목록에서 찾아 넘긴다. 전량 매도로
+   * 자동 삭제된 종목(ADR-0054)은 `holdings`(활성만)에 없어서, 이게 없으면 수정
+   * 모드에서 종목을 못 찾아 저장 버튼이 영영 비활성 상태로 남는다. */
+  editingHolding?: Holding | null;
   /** note가 null이면 근거를 비워서 저장한 것 — 기존 근거 행을 지워야 한다.
    * undefined와 구분하는 이유: 수정 모드에선 항상 셋 중 하나를 명확히 알 수 있다
    * (내용 있음/비움/애초에 없었음이지만 비움과 동일하게 처리해도 무해하다). */
@@ -215,7 +220,7 @@ export function ExecutionFormDialog({
     setPrevOpen(open);
     if (open && editingExecution) {
       const existingNote = tradeNotes.find((n) => n.executionId === editingExecution.id);
-      const holding = holdings.find((h) => h.id === editingExecution.holdingId);
+      const holding = holdings.find((h) => h.id === editingExecution.holdingId) ?? editingHolding;
       setSide(editingExecution.side);
       setHoldingId(editingExecution.holdingId);
       setAccountFilter(holding?.account ?? '');
@@ -243,7 +248,10 @@ export function ExecutionFormDialog({
     setEditingClassification(false);
   }
 
-  const selected = holdings.find((h) => h.id === holdingId);
+  // 수정 모드에선 삭제된 종목일 수도 있으므로 editingHolding으로 대체한다.
+  const selected =
+    holdings.find((h) => h.id === holdingId) ??
+    (editingExecution && editingHolding?.id === holdingId ? editingHolding : undefined);
   const region: Region = isNewHolding ? newHolding.region : (selected?.region ?? '국내');
   const currency = currencyOf(region);
 
@@ -273,10 +281,12 @@ export function ExecutionFormDialog({
 
   const accountOptions = useMemo(
     () =>
-      [...new Set(holdings.map((h) => h.account).filter((a): a is string => !!a))].sort((a, b) =>
-        a.localeCompare(b, 'ko'),
-      ),
-    [holdings],
+      [
+        ...new Set(
+          [...holdings.map((h) => h.account), selected?.account].filter((a): a is string => !!a),
+        ),
+      ].sort((a, b) => a.localeCompare(b, 'ko')),
+    [holdings, selected?.account],
   );
   // 계좌 필터를 아직 안 골랐으면(빈 문자열, placeholder 상태) 전체 종목을 보여준다 —
   // "전체" 옵션을 없앤 대신, 선택 전 상태 자체가 그 역할을 한다.
@@ -287,6 +297,11 @@ export function ExecutionFormDialog({
         .map((h) => ({ value: h.id, label: holdingOptionLabel(h) })),
     [holdings, accountFilter],
   );
+  // 수정 중인 종목이 활성 목록에 없으면(삭제된 종목) 콤보박스가 빈 칸으로 보이지
+  // 않도록 표시용 항목을 따로 만든다 — 수정 모드에선 콤보박스가 disabled라 고를 일은 없다.
+  const selectedComboItem =
+    holdingComboItems.find((i) => i.value === holdingId) ??
+    (selected ? { value: selected.id, label: holdingOptionLabel(selected) } : null);
   // base-ui 콤보박스의 내장 필터링은 한글 조합 중엔 목록을 안 좁혀서(위 훅 주석 참고)
   // 클릭/Enter로 엉뚱한 종목이 골라지는 버그가 있었다 — 검색어를 직접 추적해 우회한다.
   const holdingSearch = useComboboxSearch(holdingComboItems, (item) => item.label);
@@ -640,7 +655,7 @@ export function ExecutionFormDialog({
                 <Combobox<HoldingComboItem>
                   items={holdingComboItems}
                   filteredItems={holdingSearch.filteredItems}
-                  value={holdingComboItems.find((i) => i.value === holdingId) ?? null}
+                  value={selectedComboItem}
                   onValueChange={(item) => handleHoldingChange(item?.value ?? '')}
                   disabled={!!editingExecution}
                 >

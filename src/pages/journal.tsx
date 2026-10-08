@@ -828,6 +828,7 @@ export default function JournalPage() {
         onUpdateHoldingClassification={handleUpdateHoldingClassification}
         onSubmit={handleSubmit}
         editingExecution={editingExecution}
+        editingHolding={editingExecution ? holdingById.get(editingExecution.holdingId) : null}
         onUpdate={handleUpdate}
       />
 
