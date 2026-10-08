@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -192,6 +192,7 @@ export function ExecutionFormDialog({
   const [newHoldingLeverageText, setNewHoldingLeverageText] = useState('1');
   const [noteBody, setNoteBody] = useState('');
   const [prevOpen, setPrevOpen] = useState(open);
+  const popupRef = useRef<HTMLDivElement>(null);
 
   // 기존 종목의 역할·섹터·레버리지를 "변경" 링크로 바로 고치는 인라인 편집 상태 —
   // 매매 저장과 별개로 즉시 반영된다(ADR-0062).
@@ -433,7 +434,13 @@ export function ExecutionFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      {/* 수정 모드에선 종목을 바꿀 수 없으니, 기본 동작(첫 입력 필드=종목 검색에 포커스)
+          대신 팝업 자체에 포커스를 둔다. */}
+      <DialogContent
+        ref={popupRef}
+        initialFocus={editingExecution ? popupRef : undefined}
+        className="max-h-[85vh] overflow-y-auto sm:max-w-lg"
+      >
         <DialogHeader>
           <DialogTitle>{editingExecution ? '매매 수정' : '매매 추가'}</DialogTitle>
         </DialogHeader>
@@ -659,7 +666,15 @@ export function ExecutionFormDialog({
                   onValueChange={(item) => handleHoldingChange(item?.value ?? '')}
                   disabled={!!editingExecution}
                 >
-                  <ComboboxInput placeholder="종목 검색" className="w-full" {...holdingSearch.inputProps} />
+                  {/* Root의 disabled가 shadcn ComboboxInput 래퍼(disabled 기본값 false)에서
+                      덮여 입력창까지 안 내려가므로 직접 넘긴다 — 안 그러면 수정 모드에서도
+                      클릭·탭으로 포커스가 들어간다. */}
+                  <ComboboxInput
+                    placeholder="종목 검색"
+                    className="w-full"
+                    disabled={!!editingExecution}
+                    {...holdingSearch.inputProps}
+                  />
                   <ComboboxContent>
                     <ComboboxEmpty>검색 결과가 없습니다.</ComboboxEmpty>
                     <ComboboxList>
