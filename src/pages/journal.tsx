@@ -38,6 +38,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { useAddExecution, useDeleteExecution, useExecutions, useUpdateExecution } from '@/hooks/useExecutions';
 import { useAddHolding, useAllHoldings, useHoldings, useUpdateHolding } from '@/hooks/useHoldings';
@@ -158,7 +159,9 @@ interface HoldingComboItem {
   label: string;
 }
 
-/** 한 종목의 근거를 매수/매도로 나눠 시간순으로 — 기초잔고(날짜 없음)는 항상 먼저. */
+/** 한 종목의 체결을 매수/매도로 나눠 시간순으로, 각 체결의 근거와 함께 — 기초잔고(날짜
+ * 없음)는 항상 먼저. 근거가 없는 체결도 빼지 않는다(body = '') — 종목 모드 근거 칸에서
+ * 그 자리에 바로 새 근거를 쓸 수 있어야 하기 때문이다. */
 function notesForSide(
   executions: Execution[],
   tradeNotes: TradeNote[],
@@ -167,10 +170,7 @@ function notesForSide(
   return executions
     .filter((e) => e.side === side)
     .toSorted((a, b) => (a.executedAt ?? '').localeCompare(b.executedAt ?? ''))
-    .flatMap((e) => {
-      const body = tradeNotes.find((n) => n.executionId === e.id)?.body;
-      return body ? [{ execution: e, body }] : [];
-    });
+    .map((e) => ({ execution: e, body: tradeNotes.find((n) => n.executionId === e.id)?.body ?? '' }));
 }
 
 export default function JournalPage() {
@@ -588,6 +588,19 @@ export default function JournalPage() {
     }
   }
 
+  /** 종목 모드 근거 칸의 인라인 수정 — 체결 수정 모달과 같은 규칙: 비우면 근거 행을 지운다. */
+  async function handleSaveNote(executionId: string, body: string) {
+    const trimmed = body.trim();
+    try {
+      if (trimmed) await upsertTradeNote.mutateAsync({ executionId, body: trimmed });
+      else await deleteTradeNote.mutateAsync(executionId);
+    } catch (err) {
+      console.error('Failed to save trade note', err);
+      toast.error('근거 저장에 실패했습니다.');
+      throw err;
+    }
+  }
+
   async function handleDelete(execution: Execution) {
     const holding = holdingById.get(execution.holdingId);
     if (!holding) return;
@@ -704,8 +717,8 @@ export default function JournalPage() {
               <TradePlanCard holdings={matchingHoldings} onSave={handleSaveTradePlan} />
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <NotesColumn title="매수 근거" notes={holdingBuyNotes} />
-                <NotesColumn title="매도 근거" notes={holdingSellNotes} />
+                <NotesColumn title="매수 근거" notes={holdingBuyNotes} onSave={handleSaveNote} />
+                <NotesColumn title="매도 근거" notes={holdingSellNotes} onSave={handleSaveNote} />
               </div>
             </>
           )}
@@ -994,24 +1007,101 @@ function AmountCell({
 }
 
 /** 종목 모드의 "매수 근거"/"매도 근거" 칸 — 매수/매도를 나란히 분리해서 보여달라는
- * 요청대로 두 칸을 각각 이 컴포넌트로 렌더링한다. */
-function NotesColumn({ title, notes }: { title: string; notes: { execution: Execution; body: string }[] }) {
+ * 요청대로 두 칸을 각각 이 컴포넌트로 렌더링한다. 체결마다 한 줄이고, 근거가 있든 없든
+ * 그 자리에서 쓰고 고칠 수 있다. */
+function NotesColumn({
+  title,
+  notes,
+  onSave,
+}: {
+  title: string;
+  notes: { execution: Execution; body: string }[];
+  onSave: (executionId: string, body: string) => Promise<void>;
+}) {
   return (
     <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
       <div className="mb-3 text-[13px] font-semibold">{title}</div>
       {notes.length === 0 ? (
-        <p className="text-xs text-muted-foreground">기록된 근거가 없습니다.</p>
+        <p className="text-xs text-muted-foreground">이 구분의 체결이 없습니다.</p>
       ) : (
         <div className="flex flex-col gap-2.5">
           {notes.map(({ execution: e, body }) => (
-            <div key={e.id} className="border-t border-border pt-2.5 text-xs first:border-t-0 first:pt-0">
-              <div className="mb-1 text-[10px] text-muted-foreground">
-                {e.executedAt ? localDayKey(e.executedAt) : '기초잔고'}
-              </div>
-              <p className="whitespace-pre-wrap">{body}</p>
-            </div>
+            <NoteItem key={e.id} execution={e} body={body} onSave={(next) => onSave(e.id, next)} />
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function NoteItem({
+  execution: e,
+  body,
+  onSave,
+}: {
+  execution: Execution;
+  body: string;
+  onSave: (body: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(body);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    // 원래 비어 있던 근거를 빈 채로 저장하면 할 일이 없다 — 지울 행도 없다.
+    if (!body && !draft.trim()) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setEditing(false);
+    } catch {
+      // 실패 토스트는 onSave 쪽에서 띄운다 — 편집 상태를 유지해 입력한 내용을 잃지 않게 한다.
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-border pt-2.5 text-xs first:border-t-0 first:pt-0">
+      <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+        <span>{e.executedAt ? localDayKey(e.executedAt) : '기초잔고'}</span>
+        {!editing && (
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(body);
+              setEditing(true);
+            }}
+            className="text-[11px] underline-offset-2 hover:underline"
+          >
+            수정
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <div className="flex flex-col gap-2">
+          <Textarea value={draft} onChange={(ev) => setDraft(ev.target.value)} rows={3} className="max-h-40 resize-none text-xs" />
+          <div className="flex items-center justify-end gap-2">
+            {body && !draft.trim() && <span className="mr-auto text-[10px] text-muted-foreground">비워서 저장하면 근거가 삭제됩니다.</span>}
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+            >
+              취소
+            </button>
+            <Button type="button" size="sm" className="h-6 text-[11px]" onClick={() => void handleSave()} disabled={saving}>
+              {saving ? '저장 중...' : '저장'}
+            </Button>
+          </div>
+        </div>
+      ) : body ? (
+        <p className="whitespace-pre-wrap">{body}</p>
+      ) : (
+        <p className="text-muted-foreground">기록된 근거가 없습니다.</p>
       )}
     </div>
   );
