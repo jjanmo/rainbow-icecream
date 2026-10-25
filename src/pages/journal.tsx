@@ -22,6 +22,7 @@ import {
 } from '@/components/journal/ExecutionsFilterBar';
 import { ExecutionsTable } from '@/components/journal/ExecutionsTable';
 import { OpeningBalanceHelp } from '@/components/journal/OpeningBalanceHelp';
+import { TradePlanCard } from '@/components/journal/TradePlanCard';
 import { DataErrorNotice } from '@/components/shared/DataErrorNotice';
 import {
   AlertDialog,
@@ -51,7 +52,7 @@ import { replayHolding, type ClosedLot } from '@/lib/journal/replay';
 import { hasActivity, summarizeExecutions, type TradeSummary } from '@/lib/journal/summary';
 import { fmtUsd, fmtWon } from '@/lib/format';
 import type { Execution, NewExecution, Side, TradeNote } from '@/types/journal';
-import type { Holding } from '@/types/domain';
+import type { Holding, TradePlan } from '@/types/domain';
 
 /** 로컬 시간대 기준 'YYYY-MM-DD'. 체결은 UTC로 저장되므로 표시 시점에 변환한다. */
 function localDayKey(iso: string): string {
@@ -380,6 +381,10 @@ export default function JournalPage() {
     if (!key) return selectedHoldingId ? new Set([selectedHoldingId]) : new Set<string>();
     return new Set((holdingGroupsByKey.get(key) ?? []).map((h) => h.id));
   }, [selectedHoldingId, groupKeyByHoldingId, holdingGroupsByKey]);
+  const matchingHoldings = useMemo(
+    () => allHoldings.filter((h) => matchingHoldingIds.has(h.id)),
+    [allHoldings, matchingHoldingIds],
+  );
   const holdingExecutions = useMemo(
     () => (executionsQuery.data ?? []).filter((e) => matchingHoldingIds.has(e.holdingId)),
     [executionsQuery.data, matchingHoldingIds],
@@ -482,18 +487,18 @@ export default function JournalPage() {
     return addAxisCategory.mutateAsync({ axis: 'sector', name, description: null, targetPct: 0, sortOrder });
   }
 
-  /** 매매 모달의 "변경" 링크 — 매매 저장과 무관하게 역할·섹터·레버리지만 바로 바꾼다. */
-  async function handleUpdateHoldingClassification(input: {
+  /** 매매 모달의 "변경" 링크 — 매매 저장과 무관하게 역할·섹터·레버리지·매매 계획만 바로 바꾼다. */
+  async function handleUpdateHoldingClassification({
+    holdingId,
+    ...patch
+  }: {
     holdingId: string;
     roleId: Holding['roleId'];
     sectorId: string | null;
     leverage: number;
-  }) {
+  } & TradePlan) {
     try {
-      await updateHolding.mutateAsync({
-        id: input.holdingId,
-        patch: { roleId: input.roleId, sectorId: input.sectorId, leverage: input.leverage },
-      });
+      await updateHolding.mutateAsync({ id: holdingId, patch });
     } catch (err) {
       console.error('Failed to update holding classification', err);
       toast.error('분류 저장에 실패했습니다.');
@@ -568,6 +573,18 @@ export default function JournalPage() {
     } catch (err) {
       console.error('Failed to save trade note', err);
       toast.error('체결은 수정됐지만 근거 저장에 실패했습니다.');
+    }
+  }
+
+  /** 종목 모드 "매매 계획" 칸의 수정 — 매매 모달의 "변경" 링크와 같은 경로(holdings 직접 갱신). */
+  async function handleSaveTradePlan(holdingId: string, plan: TradePlan) {
+    try {
+      await updateHolding.mutateAsync({ id: holdingId, patch: plan });
+      toast.success('매매 계획을 저장했습니다.');
+    } catch (err) {
+      console.error('Failed to update trade plan', err);
+      toast.error('매매 계획 저장에 실패했습니다.');
+      throw err;
     }
   }
 
@@ -683,6 +700,8 @@ export default function JournalPage() {
                   onDelete={setDeleteTarget}
                 />
               </div>
+
+              <TradePlanCard holdings={matchingHoldings} onSave={handleSaveTradePlan} />
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <NotesColumn title="매수 근거" notes={holdingBuyNotes} />

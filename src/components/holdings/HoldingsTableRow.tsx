@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
 import type { Drawdown52w } from "@/lib/calc/high52w";
 import { costKrwOf, diffColor, returnColor, type HoldingCalc } from "@/lib/calc/rebalance";
+import { TRADE_PLAN_SIGNAL_BG, tradePlanSignalOf } from "@/lib/calc/tradePlan";
 import { fmtQty, fmtSigned, fmtUsd, fmtWon } from "@/lib/format";
 import { FitText } from "./FitText";
 
@@ -15,8 +16,8 @@ export function HoldingsTableRow({
   onDelete,
 }: {
   holding: HoldingCalc;
-  /** 해외 종목의 투입 원가를 원화로 바꿔 매입금액 열에 쓴다 — 표 하단 총 매입금액과
-   * 같은 실시간 환율이다. */
+  /** 해외 종목의 투입 원가를 원화로 바꾼다 — 매입금액 열 표시와 정찰병(원화) 금액
+   * 비교에 쓴다. 표 하단 총 매입금액과 같은 실시간 환율이다. */
   usdKrwRate: number;
   /** 52주 고점 대비 하락률(ADR-0065). null = 현금성·조회 실패 — 0%로 보이면 안 된다. */
   drawdown: Drawdown52w | null;
@@ -26,9 +27,10 @@ export function HoldingsTableRow({
 }) {
   const isOverseas = holding.nativeCurrency === "USD";
   const costKrw = costKrwOf(holding, usdKrwRate);
+  const signal = tradePlanSignalOf(holding, usdKrwRate);
 
   return (
-    <TableRow>
+    <TableRow style={signal ? { backgroundColor: TRADE_PLAN_SIGNAL_BG[signal] } : undefined}>
       <TableCell>
         <div className="flex items-center gap-1.5">
           <div className="min-w-0">

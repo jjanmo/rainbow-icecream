@@ -13,6 +13,7 @@ import {
 import { HoldingFormDialog } from '@/components/holdings/HoldingFormDialog';
 import { HoldingsHeatmap, type HeatmapBucketOf } from '@/components/holdings/HoldingsHeatmap';
 import { HoldingsTable } from '@/components/holdings/HoldingsTable';
+import { TradePlanPresetChips } from '@/components/holdings/TradePlanPresetChips';
 import { ALL_HOLDINGS_FILTER, HoldingsFilterBar, matchesHoldingsFilter, type HoldingsFilter } from '@/components/holdings/HoldingsFilterBar';
 import { DataErrorNotice } from '@/components/shared/DataErrorNotice';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ import { useAddHolding, useDeleteHolding, useUpdateHolding } from '@/hooks/useHo
 import { useRebalanceData } from '@/hooks/useRebalanceData';
 import { colorFor, hueForGroupIndex } from '@/lib/calc/color';
 import type { HoldingCalc } from '@/lib/calc/rebalance';
+import { tradePlanSignalsOf, type TradePlanSignal } from '@/lib/calc/tradePlan';
 import { buildHoldingsMarkdownTable } from '@/lib/holdingsExport';
 import type { Holding, NewHolding } from '@/types/domain';
 import { cn, downloadTextFile } from '@/lib/utils';
@@ -40,6 +42,7 @@ export default function HoldingsPage() {
   const sectorCategoriesQuery = useAxisCategories('sector');
 
   const [filter, setFilter] = useState<HoldingsFilter>(ALL_HOLDINGS_FILTER);
+  const [signalPreset, setSignalPreset] = useState<TradePlanSignal | null>(null);
   const [view, setView] = useState<HoldingsView>('table');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
@@ -59,10 +62,29 @@ export default function HoldingsPage() {
     return map;
   }, [sectorCategories]);
 
-  const filteredHoldings = useMemo(() => {
+  // 필터 바(지역/역할/…)를 먼저 적용한 결과 — 프리셋 칩의 개수는 이 기준으로 센다.
+  const barFilteredHoldings = useMemo(() => {
     if (!data) return [];
     return data.holdings.filter((h) => matchesHoldingsFilter(h, filter));
   }, [data, filter]);
+  // 프리셋 칩은 행 색상(가장 위험한 신호 하나)이 아니라 "그 조건에 걸렸는가"로 거른다 —
+  // 정찰병 미달이면서 손절 경고인 종목도 "정찰병 미달" 칩에 나와야 한다.
+  const signalsById = useMemo(
+    () => new Map(barFilteredHoldings.map((h) => [h.id, tradePlanSignalsOf(h, usdKrwRate)])),
+    [barFilteredHoldings, usdKrwRate],
+  );
+  const signalCounts = useMemo(() => {
+    const counts: Partial<Record<TradePlanSignal, number>> = {};
+    signalsById.forEach((signals) => signals.forEach((s) => (counts[s] = (counts[s] ?? 0) + 1)));
+    return counts;
+  }, [signalsById]);
+  const filteredHoldings = useMemo(
+    () =>
+      signalPreset
+        ? barFilteredHoldings.filter((h) => signalsById.get(h.id)?.includes(signalPreset))
+        : barFilteredHoldings,
+    [barFilteredHoldings, signalsById, signalPreset],
+  );
 
   const accountOptions = useMemo(() => {
     const values = (data?.holdings ?? []).map((h) => h.account).filter((a): a is string => !!a && a.trim().length > 0);
@@ -156,6 +178,10 @@ export default function HoldingsPage() {
                 다운로드
               </Button>
             </div>
+          </div>
+
+          <div className="mb-3.5">
+            <TradePlanPresetChips value={signalPreset} onChange={setSignalPreset} counts={signalCounts} />
           </div>
 
           <div className="mb-3.5 flex gap-1.5">

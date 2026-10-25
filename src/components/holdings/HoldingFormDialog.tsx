@@ -5,6 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ClassificationFieldsBlock } from '@/components/shared/ClassificationFields';
+import {
+  EMPTY_TRADE_PLAN_DRAFT,
+  parseTradePlanDraft,
+  toTradePlanDraft,
+  TradePlanFieldsBlock,
+  type TradePlanDraft,
+} from '@/components/shared/TradePlanFields';
 import { useAddAxisCategory, useAxisCategories } from '@/hooks/useAxisCategories';
 import { deriveExposureRegion } from '@/lib/calc/axisRebalance';
 import {
@@ -13,6 +20,7 @@ import {
   type ExposureRegion,
   type NewHolding,
   type Region,
+  type TradePlanKey,
 } from '@/types/domain';
 
 const EXPOSURE_ITEMS = [
@@ -23,8 +31,9 @@ const EXPOSURE_ITEMS = [
 
 // 추가 모달은 최초 진입 시 아무것도 선택되지 않은 placeholder 상태로 열려야 하므로,
 // region/assetType도 (수정 모달과 달리) 빈 문자열을 잠깐 가질 수 있다 — 제출 시점엔
-// canSubmit이 이미 실값 채움을 확인했으므로 안전하게 단언한다.
-type Draft = Omit<NewHolding, 'qty' | 'avgPrice' | 'region' | 'assetType'> & {
+// canSubmit이 이미 실값 채움을 확인했으므로 안전하게 단언한다. 매매 계획은 문자열
+// 초안(TradePlanDraft)으로 따로 들고 있다가 제출할 때 합친다.
+type Draft = Omit<NewHolding, 'qty' | 'avgPrice' | 'region' | 'assetType' | TradePlanKey> & {
   region: Region | '';
   assetType: AssetType | '';
 };
@@ -86,6 +95,9 @@ export function HoldingFormDialog({
   const isEdit = !!initialHolding;
   const [draft, setDraft] = useState<Draft>(initialHolding ? toDraft(initialHolding) : EMPTY_DRAFT);
   const [leverageText, setLeverageText] = useState(String((initialHolding ?? EMPTY_DRAFT).leverage));
+  const [planDraft, setPlanDraft] = useState<TradePlanDraft>(
+    initialHolding ? toTradePlanDraft(initialHolding) : EMPTY_TRADE_PLAN_DRAFT,
+  );
   // 현금성 종목(ticker 없음)은 매매일지의 "+ 새 종목"에서만 만들 수 있다 — 여기서는
   // 기존 현금성 종목의 티커 입력만 계속 비활성화해 둔다(코드로 되돌릴 방법이 없다).
   const isCash = !!initialHolding && !initialHolding.ticker;
@@ -102,6 +114,7 @@ export function HoldingFormDialog({
       const nextDraft = initialHolding ? toDraft(initialHolding) : EMPTY_DRAFT;
       setDraft(nextDraft);
       setLeverageText(String(nextDraft.leverage));
+      setPlanDraft(initialHolding ? toTradePlanDraft(initialHolding) : EMPTY_TRADE_PLAN_DRAFT);
     }
   }
 
@@ -127,13 +140,14 @@ export function HoldingFormDialog({
       assetType: draft.assetType,
       ticker: isCash ? null : draft.ticker,
       leverage: parseFloat(leverageText) || 1,
+      ...parseTradePlanDraft(planDraft),
     });
     onOpenChange(false);
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{isEdit ? '종목 수정' : '종목 추가'}</DialogTitle>
         </DialogHeader>
@@ -261,7 +275,7 @@ export function HoldingFormDialog({
 
           <div className="flex flex-col gap-1.5 rounded-lg border border-dashed border-border p-2.5">
             <Label className="text-[11px] text-muted-foreground">
-              역할·섹터·레버리지 (선택 — 매매 시점에도 지정할 수 있습니다)
+              역할·섹터·레버리지·매매 계획 (선택 — 매매 시점에도 지정할 수 있습니다)
             </Label>
             <ClassificationFieldsBlock
               roles={roleCategoriesQuery.data ?? []}
@@ -274,6 +288,7 @@ export function HoldingFormDialog({
               leverageText={leverageText}
               onLeverageTextChange={setLeverageText}
             />
+            <TradePlanFieldsBlock draft={planDraft} onChange={setPlanDraft} />
           </div>
 
           {isCash && (

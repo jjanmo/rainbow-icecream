@@ -76,6 +76,31 @@ export interface Holding {
   sectorId: string | null;
   /** 기초자산 대비 배수 — 계산(비중/한도)엔 전혀 안 쓰는 순수 표시용 메타데이터. 기본 1. */
   leverage: number;
+  // 매매 계획(ADR-0064) — 전부 선택 입력이라 null이면 "계획 없음"이고, 그 항목에 대한
+  // 행 색상 신호도 뜨지 않는다. 금액은 지역과 무관하게 항상 원화다 — 해외 종목은
+  // 투입 원가를 실시간 환율로 원화 환산해 비교한다(평가금액과 같은 성격, ADR-0038 경계 안).
+  /** 정찰병 최대 금액 — 투입 원가가 이보다 작으면 "정찰병 미달". */
+  scoutAmount: number | null;
+  /** 최대 매수 금액 — 적립식(`isDca`)이거나 미정(`maxUndecided`)이면 null. */
+  maxBuyAmount: number | null;
+  /** 최대 매수 금액을 몇 번에 나눠 살지 — 적립식·미정이면 null. */
+  splitCount: number | null;
+  /** 적립식 — 최대 금액 대신 적립 일정(dca*)을 둔다. `maxUndecided`와 동시에 true일 수 없다. */
+  isDca: boolean;
+  /** 최대 금액 미정 — 상한 대신 매수 전략 메모(`undecidedMemo`)를 둔다. */
+  maxUndecided: boolean;
+  /** 최대 금액 미정일 때의 매수 전략 메모(자유 서술, 집계에 안 쓴다). */
+  undecidedMemo: string | null;
+  /** 적립 주기 — `isDca`일 때만 의미가 있다. null = 적립 일정 미정. */
+  dcaFrequency: DcaFrequency | null;
+  /** 적립일 — 매주면 요일(1=월 … 7=일), 매월이면 날짜(1~31), 매일이면 null. */
+  dcaDay: number | null;
+  /** 1회 적립 금액(원). `dcaQty`와 둘 중 하나만 채운다. */
+  dcaAmount: number | null;
+  /** 1회 적립 주수 — 해외 소수점 매수가 있어 소수 허용. `dcaAmount`와 둘 중 하나만. */
+  dcaQty: number | null;
+  /** 손절라인 수익률(%) — 항상 음수(예: -40). */
+  stopLossPct: number | null;
   /** soft delete — 하드 삭제는 executions/trade_notes까지 cascade로 영구히 지워서,
    * 나중에 같은 종목을 재매수했을 때 예전 기록을 다시 볼 방법이 없어진다 (ADR-0045). */
   deletedAt: string | null;
@@ -92,6 +117,30 @@ export interface LivePrice {
 export type LivePriceMap = Record<string, LivePrice>;
 
 export type NewHolding = Omit<Holding, "id" | "userId" | "createdAt" | "deletedAt">;
+
+/** 적립식 주기 (ADR-0064). */
+export type DcaFrequency = "DAILY" | "WEEKLY" | "MONTHLY";
+
+export const DCA_FREQUENCY_LABELS: Record<DcaFrequency, string> = {
+  DAILY: "매일",
+  WEEKLY: "매주",
+  MONTHLY: "매월",
+};
+
+/** 종목별 매매 계획 필드 묶음 (ADR-0064) — 입력 블록·저장 핸들러들이 같은 집합을 주고받는다. */
+export type TradePlanKey =
+  | "scoutAmount"
+  | "maxBuyAmount"
+  | "splitCount"
+  | "isDca"
+  | "maxUndecided"
+  | "undecidedMemo"
+  | "dcaFrequency"
+  | "dcaDay"
+  | "dcaAmount"
+  | "dcaQty"
+  | "stopLossPct";
+export type TradePlan = Pick<Holding, TradePlanKey>;
 
 /** 시장(실질지역) 축 버킷 하나에 대한 목표 비중 (ADR-0058). 역할·섹터는 이제
  * `AxisCategory.targetPct`에 직접 저장하므로 여기 안 들어간다(ADR-0063). */

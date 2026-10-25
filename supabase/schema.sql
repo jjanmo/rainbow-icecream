@@ -789,6 +789,24 @@ end $$;
 
 
 -- ---------------------------------------------------------------------------
+-- Migration: 종목별 매매 계획 (ADR-0064). 정찰병 최대 금액·최대 매수 금액/분할 횟수·
+-- 손절라인을 매매 모달에서 입력받아 holdings에 둔다 — 체결 한 건이 아니라 종목 하나의
+-- 계획이기 때문이다. 전부 nullable(= 계획 없음, 신호 없음). 금액은 지역과 무관하게
+-- 항상 원화(KRW)다. live 시세 파생값이 아니라 사용자가 입력한 계획값이므로
+-- "current_price를 DB에 저장하지 않는다" 원칙과 충돌하지 않는다. Idempotent.
+-- ---------------------------------------------------------------------------
+alter table holdings add column if not exists scout_amount numeric
+  check (scout_amount is null or scout_amount > 0);
+alter table holdings add column if not exists max_buy_amount numeric
+  check (max_buy_amount is null or max_buy_amount > 0);
+alter table holdings add column if not exists split_count int
+  check (split_count is null or split_count > 0);
+-- 적립식이거나 최대 금액을 정하지 않은 종목 — true면 max_buy_amount/split_count를 무시한다.
+alter table holdings add column if not exists max_unlimited boolean not null default false;
+alter table holdings add column if not exists stop_loss_pct numeric
+  check (stop_loss_pct is null or stop_loss_pct < 0);
+
+-- ---------------------------------------------------------------------------
 -- Migration: 52주 고점 일별 캐시 (ADR-0065). 종목별 최근 52주 일봉 장중 고가의 최댓값을
 -- "하루(KST) 한 번" Toss 캔들로 계산해 저장한다 — 심볼당 캔들 API 2페이지가 필요해서
 -- 현재가처럼 매번 조회할 수 없기 때문이다. 화면에서는 이 값과 실시간 현재가 중 큰 값을
@@ -820,3 +838,45 @@ drop policy if exists "authenticated write price highs" on price_high_52w;
 create policy "authenticated write price highs" on price_high_52w
   for insert
   with check (auth.uid() is not null);
+
+-- ---------------------------------------------------------------------------
+-- Migration: 적립식 일정 (ADR-0064 보완). max_unlimited(적립식·미정)일 때 언제·얼마나
+-- 적립할지. 전부 nullable — 적립식이어도 일정을 안 정했으면 null로 둔다. dca_day는
+-- 주기별로 뜻이 다르다: WEEKLY면 요일(1=월 … 7=일), MONTHLY면 날짜(1~31), DAILY면 null.
+-- dca_amount는 다른 계획 금액처럼 원 단위(입력은 만원). Idempotent.
+-- ---------------------------------------------------------------------------
+alter table holdings add column if not exists dca_frequency text
+  check (dca_frequency is null or dca_frequency in ('DAILY', 'WEEKLY', 'MONTHLY'));
+alter table holdings add column if not exists dca_day int
+  check (dca_day is null or dca_day between 1 and 31);
+alter table holdings add column if not exists dca_amount numeric
+  check (dca_amount is null or dca_amount > 0);
+
+-- ---------------------------------------------------------------------------
+-- Migration: "적립식 / 최대 금액 미정" 체크박스 하나를 둘로 나눈다 (ADR-0064 보완).
+-- 둘은 다른 개념이다 — 적립식은 주기적으로 일정 금액을 넣는 방식(적립 일정 dca_*를
+-- 받는다), 미정은 아직 상한을 못 정한 상태(대신 매수 전략 메모 undecided_memo를 받는다).
+-- 사용자 결정으로 둘 중 하나만 고를 수 있다(CHECK 제약). 기존 max_unlimited = true 행은
+-- 어느 쪽이었는지 알 수 없어 일단 적립식(is_dca)으로 옮긴다 — rename이라 값이 그대로
+-- 이어진다. Idempotent하지 않은 rename이므로 max_unlimited가 있을 때만 실행한다.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_name = 'holdings' and column_name = 'max_unlimited') then
+    alter table holdings rename column max_unlimited to is_dca;
+  end if;
+end $$;
+alter table holdings add column if not exists max_undecided boolean not null default false;
+alter table holdings add column if not exists undecided_memo text;
+alter table holdings drop constraint if exists holdings_plan_mode_check;
+alter table holdings add constraint holdings_plan_mode_check check (not (is_dca and max_undecided));
+
+-- ---------------------------------------------------------------------------
+-- Migration: 1회 적립을 금액 또는 주수로 (ADR-0064 보완). dca_amount(원)와 dca_qty(주,
+-- 해외 소수점 매수가 있어 numeric) 중 하나만 채운다 — 단위 구분 컬럼을 따로 두지 않고
+-- 어느 쪽이 채워졌는지로 판단한다. Idempotent.
+-- ---------------------------------------------------------------------------
+alter table holdings add column if not exists dca_qty numeric
+  check (dca_qty is null or dca_qty > 0);
+alter table holdings drop constraint if exists holdings_dca_unit_check;
+alter table holdings add constraint holdings_dca_unit_check check (dca_amount is null or dca_qty is null);

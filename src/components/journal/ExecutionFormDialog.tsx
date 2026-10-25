@@ -15,10 +15,18 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ClassificationFieldsBlock } from '@/components/shared/ClassificationFields';
+import {
+  EMPTY_TRADE_PLAN_DRAFT,
+  parseTradePlanDraft,
+  toTradePlanDraft,
+  TradePlanFieldsBlock,
+  type TradePlanDraft,
+} from '@/components/shared/TradePlanFields';
 import { useComboboxSearch } from '@/hooks/useComboboxSearch';
 import { cn } from '@/lib/utils';
 import { deriveExposureRegion } from '@/lib/calc/axisRebalance';
 import { computeExecutionAmount, currencyOf, normalizeQty } from '@/lib/journal/cost';
+import { fmtMaxBuyPlan, fmtPlanAmount } from '@/lib/calc/tradePlan';
 import { fmtQty, fmtUsd, fmtWon } from '@/lib/format';
 import {
   ASSET_TYPE_LABELS,
@@ -28,6 +36,7 @@ import {
   type Holding,
   type NewHolding,
   type Region,
+  type TradePlan,
 } from '@/types/domain';
 import type { Execution, NewExecution, NewTradeNote, Side, TradeNote } from '@/types/journal';
 
@@ -158,13 +167,15 @@ export function ExecutionFormDialog({
   sectors: AxisCategory[];
   /** 콤보박스에서 "+ 새 섹터 만들기"를 고르면 호출 — 만든 섹터를 반환한다. */
   onCreateSector: (name: string) => Promise<{ id: string }>;
-  /** 기존 종목의 역할·섹터·레버리지를 매매와 무관하게 바로 바꾼다("변경" 링크). */
-  onUpdateHoldingClassification: (input: {
-    holdingId: string;
-    roleId: string | null;
-    sectorId: string | null;
-    leverage: number;
-  }) => Promise<void>;
+  /** 기존 종목의 역할·섹터·레버리지·매매 계획을 매매와 무관하게 바로 바꾼다("변경" 링크). */
+  onUpdateHoldingClassification: (
+    input: {
+      holdingId: string;
+      roleId: string | null;
+      sectorId: string | null;
+      leverage: number;
+    } & TradePlan,
+  ) => Promise<void>;
   onSubmit: (submit: ExecutionSubmit) => void;
   /** 지정하면 새 체결 추가가 아니라 이 체결을 고치는 모드로 연다 — 종목은 바꿀
    * 수 없다(다른 종목으로 옮기는 건 별도 리플레이 대상이 둘이 되는 문제라 지원하지
@@ -190,6 +201,7 @@ export function ExecutionFormDialog({
   const [executedAtLocal, setExecutedAtLocal] = useState('');
   const [newHolding, setNewHolding] = useState<NewHoldingDraft>(EMPTY_NEW_HOLDING);
   const [newHoldingLeverageText, setNewHoldingLeverageText] = useState('1');
+  const [newHoldingPlan, setNewHoldingPlan] = useState<TradePlanDraft>(EMPTY_TRADE_PLAN_DRAFT);
   const [noteBody, setNoteBody] = useState('');
   const [prevOpen, setPrevOpen] = useState(open);
   const popupRef = useRef<HTMLDivElement>(null);
@@ -200,6 +212,7 @@ export function ExecutionFormDialog({
   const [classificationRoleId, setClassificationRoleId] = useState<string | null>(null);
   const [classificationSectorId, setClassificationSectorId] = useState<string | null>(null);
   const [classificationLeverageText, setClassificationLeverageText] = useState('1');
+  const [classificationPlan, setClassificationPlan] = useState<TradePlanDraft>(EMPTY_TRADE_PLAN_DRAFT);
   const [savingClassification, setSavingClassification] = useState(false);
 
   const holdingById = useMemo(() => new Map(holdings.map((h) => [h.id, h])), [holdings]);
@@ -232,6 +245,12 @@ export function ExecutionFormDialog({
       setPriceText(String(editingExecution.price));
       setExecutedAtLocal(editingExecution.executedAt ? toLocalInputValue(editingExecution.executedAt) : '');
       setNoteBody(existingNote?.body ?? '');
+      // 수정 모드에서도 "변경" 링크로 그 종목의 분류·매매 계획을 고칠 수 있다 — 종목을
+      // 고르는 단계(handleHoldingChange)가 없으니 여기서 드래프트를 채운다.
+      setClassificationRoleId(holding?.roleId ?? null);
+      setClassificationSectorId(holding?.sectorId ?? null);
+      setClassificationLeverageText(String(holding?.leverage ?? 1));
+      setClassificationPlan(holding ? toTradePlanDraft(holding) : EMPTY_TRADE_PLAN_DRAFT);
     } else if (open) {
       setSide('BUY');
       setHoldingId('');
@@ -244,6 +263,7 @@ export function ExecutionFormDialog({
       setExecutedAtLocal(toLocalInputValue(new Date().toISOString()));
       setNewHolding(EMPTY_NEW_HOLDING);
       setNewHoldingLeverageText('1');
+      setNewHoldingPlan(EMPTY_TRADE_PLAN_DRAFT);
       setNoteBody('');
     }
     setEditingClassification(false);
@@ -336,6 +356,7 @@ export function ExecutionFormDialog({
     setClassificationRoleId(h?.roleId ?? null);
     setClassificationSectorId(h?.sectorId ?? null);
     setClassificationLeverageText(String(h?.leverage ?? 1));
+    setClassificationPlan(h ? toTradePlanDraft(h) : EMPTY_TRADE_PLAN_DRAFT);
   }
 
   async function handleSaveClassification() {
@@ -347,6 +368,7 @@ export function ExecutionFormDialog({
         roleId: classificationRoleId,
         sectorId: classificationSectorId,
         leverage: parseFloat(classificationLeverageText) || 1,
+        ...parseTradePlanDraft(classificationPlan),
       });
       setEditingClassification(false);
     } finally {
@@ -420,6 +442,7 @@ export function ExecutionFormDialog({
           roleId: newHolding.roleId,
           sectorId: newHolding.sectorId,
           leverage: parseFloat(newHoldingLeverageText) || 1,
+          ...parseTradePlanDraft(newHoldingPlan),
         },
         execution,
         note,
@@ -629,6 +652,7 @@ export function ExecutionFormDialog({
                     leverageText={newHoldingLeverageText}
                     onLeverageTextChange={setNewHoldingLeverageText}
                   />
+                  <TradePlanFieldsBlock draft={newHoldingPlan} onChange={setNewHoldingPlan} />
                 </div>
 
                 <label className="flex items-center gap-1.5 text-sm">
@@ -688,7 +712,7 @@ export function ExecutionFormDialog({
                 </Combobox>
               </div>
             )}
-            {!isNewHolding && !editingExecution && selected && (
+            {!isNewHolding && selected && (
               <div className="rounded-lg border border-dashed border-border p-2.5">
                 {editingClassification ? (
                   <div className="flex flex-col gap-2.5">
@@ -703,6 +727,7 @@ export function ExecutionFormDialog({
                       leverageText={classificationLeverageText}
                       onLeverageTextChange={setClassificationLeverageText}
                     />
+                    <TradePlanFieldsBlock draft={classificationPlan} onChange={setClassificationPlan} />
                     <div className="flex justify-end gap-2">
                       <button
                         type="button"
@@ -724,11 +749,14 @@ export function ExecutionFormDialog({
                   </div>
                 ) : (
                   <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="text-muted-foreground">
-                      {selected.roleId ? roles.find((r) => r.id === selected.roleId)?.name ?? '역할 미분류' : '역할 미분류'} ·{' '}
-                      {selected.sectorId ? sectors.find((s) => s.id === selected.sectorId)?.name ?? '섹터 미지정' : '섹터 미지정'}
-                      {selected.leverage !== 1 && ` · ${selected.leverage}X`}
-                    </span>
+                    <div className="flex flex-col gap-0.5 text-muted-foreground">
+                      <span>
+                        {selected.roleId ? roles.find((r) => r.id === selected.roleId)?.name ?? '역할 미분류' : '역할 미분류'} ·{' '}
+                        {selected.sectorId ? sectors.find((s) => s.id === selected.sectorId)?.name ?? '섹터 미지정' : '섹터 미지정'}
+                        {selected.leverage !== 1 && ` · ${selected.leverage}X`}
+                      </span>
+                      <span>{tradePlanSummary(selected)}</span>
+                    </div>
                     <button
                       type="button"
                       onClick={() => setEditingClassification(true)}
@@ -886,6 +914,17 @@ export function ExecutionFormDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** "변경" 링크 옆에 보여주는 매매 계획 한 줄 요약. */
+function tradePlanSummary(h: Holding): string {
+  const maxBuy = fmtMaxBuyPlan(h);
+  const parts = [
+    h.scoutAmount != null && `정찰병 ${fmtPlanAmount(h.scoutAmount)}`,
+    maxBuy && `최대 ${maxBuy}`,
+    h.stopLossPct != null && `손절 ${h.stopLossPct}%`,
+  ].filter((p): p is string => !!p);
+  return parts.length > 0 ? parts.join(' · ') : '매매 계획 없음';
 }
 
 function Row({ label, value, hint, strong }: { label: string; value: string; hint?: string; strong?: boolean }) {

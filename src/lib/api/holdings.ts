@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AssetType, ExposureRegion, Holding, NewHolding, Region } from "@/types/domain";
+import type { AssetType, DcaFrequency, ExposureRegion, Holding, NewHolding, Region } from "@/types/domain";
 
 export type HoldingPatch = Partial<NewHolding>;
 
@@ -17,12 +17,28 @@ interface HoldingRow {
   role_id: string | null;
   sector_id: string | null;
   leverage: number;
+  scout_amount: number | null;
+  max_buy_amount: number | null;
+  split_count: number | null;
+  is_dca: boolean;
+  max_undecided: boolean;
+  undecided_memo: string | null;
+  dca_frequency: DcaFrequency | null;
+  dca_day: number | null;
+  dca_amount: number | null;
+  dca_qty: number | null;
+  stop_loss_pct: number | null;
   deleted_at: string | null;
   created_at: string;
 }
 
 const COLUMNS =
-  "id, user_id, ticker, name, qty, avg_price, account, region, asset_type, exposure_region, role_id, sector_id, leverage, deleted_at, created_at";
+  "id, user_id, ticker, name, qty, avg_price, account, region, asset_type, exposure_region, role_id, sector_id, leverage, scout_amount, max_buy_amount, split_count, is_dca, max_undecided, undecided_memo, dca_frequency, dca_day, dca_amount, dca_qty, stop_loss_pct, deleted_at, created_at";
+
+/** numeric 컬럼은 문자열로 올 수 있어 Number로 바꾸되, null은 그대로 둔다. */
+function toNullableNumber(v: number | null): number | null {
+  return v == null ? null : Number(v);
+}
 
 function toDomain(row: HoldingRow): Holding {
   return {
@@ -39,6 +55,17 @@ function toDomain(row: HoldingRow): Holding {
     roleId: row.role_id,
     sectorId: row.sector_id,
     leverage: Number(row.leverage),
+    scoutAmount: toNullableNumber(row.scout_amount),
+    maxBuyAmount: toNullableNumber(row.max_buy_amount),
+    splitCount: toNullableNumber(row.split_count),
+    isDca: row.is_dca,
+    maxUndecided: row.max_undecided,
+    undecidedMemo: row.undecided_memo,
+    dcaFrequency: row.dca_frequency,
+    dcaDay: toNullableNumber(row.dca_day),
+    dcaAmount: toNullableNumber(row.dca_amount),
+    dcaQty: toNullableNumber(row.dca_qty),
+    stopLossPct: toNullableNumber(row.stop_loss_pct),
     deletedAt: row.deleted_at,
     createdAt: row.created_at,
   };
@@ -90,6 +117,17 @@ export async function insertHolding(
       role_id: holding.roleId,
       sector_id: holding.sectorId,
       leverage: holding.leverage,
+      scout_amount: holding.scoutAmount,
+      max_buy_amount: holding.maxBuyAmount,
+      split_count: holding.splitCount,
+      is_dca: holding.isDca,
+      max_undecided: holding.maxUndecided,
+      undecided_memo: holding.undecidedMemo,
+      dca_frequency: holding.dcaFrequency,
+      dca_day: holding.dcaDay,
+      dca_amount: holding.dcaAmount,
+      dca_qty: holding.dcaQty,
+      stop_loss_pct: holding.stopLossPct,
     })
     .select(COLUMNS)
     .single();
@@ -114,6 +152,17 @@ export async function updateHolding(
   if (patch.roleId !== undefined) update.role_id = patch.roleId;
   if (patch.sectorId !== undefined) update.sector_id = patch.sectorId;
   if (patch.leverage !== undefined) update.leverage = patch.leverage;
+  if (patch.scoutAmount !== undefined) update.scout_amount = patch.scoutAmount;
+  if (patch.maxBuyAmount !== undefined) update.max_buy_amount = patch.maxBuyAmount;
+  if (patch.splitCount !== undefined) update.split_count = patch.splitCount;
+  if (patch.isDca !== undefined) update.is_dca = patch.isDca;
+  if (patch.maxUndecided !== undefined) update.max_undecided = patch.maxUndecided;
+  if (patch.undecidedMemo !== undefined) update.undecided_memo = patch.undecidedMemo;
+  if (patch.dcaFrequency !== undefined) update.dca_frequency = patch.dcaFrequency;
+  if (patch.dcaDay !== undefined) update.dca_day = patch.dcaDay;
+  if (patch.dcaAmount !== undefined) update.dca_amount = patch.dcaAmount;
+  if (patch.dcaQty !== undefined) update.dca_qty = patch.dcaQty;
+  if (patch.stopLossPct !== undefined) update.stop_loss_pct = patch.stopLossPct;
 
   const { error } = await supabase.from("holdings").update(update).eq("id", id);
   if (error) throw error;
