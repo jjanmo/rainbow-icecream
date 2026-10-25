@@ -1,13 +1,16 @@
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { costKrwOf, returnColor, type HoldingCalc } from "@/lib/calc/rebalance";
+import type { Drawdown52w } from "@/lib/calc/high52w";
+import { costKrwOf, diffColor, returnColor, type HoldingCalc } from "@/lib/calc/rebalance";
 import { fmtQty, fmtSigned, fmtUsd, fmtWon } from "@/lib/format";
 import { FitText } from "./FitText";
 
 export function HoldingsTableRow({
   holding,
   usdKrwRate,
+  drawdown,
+  drawdownLoading,
   onEdit,
   onDelete,
 }: {
@@ -15,6 +18,9 @@ export function HoldingsTableRow({
   /** 해외 종목의 투입 원가를 원화로 바꿔 매입금액 열에 쓴다 — 표 하단 총 매입금액과
    * 같은 실시간 환율이다. */
   usdKrwRate: number;
+  /** 52주 고점 대비 하락률(ADR-0065). null = 현금성·조회 실패 — 0%로 보이면 안 된다. */
+  drawdown: Drawdown52w | null;
+  drawdownLoading: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -61,6 +67,21 @@ export function HoldingsTableRow({
         <FitText className="font-mono font-semibold" style={{ color: returnColor(holding.returnPct) }}>
           {fmtSigned(holding.returnPct)}
         </FitText>
+      </TableCell>
+      <TableCell className="text-right">
+        {drawdown ? (
+          <>
+            <FitText className="font-mono" style={{ color: diffColor(drawdown.drawdownPct) }}>
+              {fmtSigned(drawdown.drawdownPct)}
+            </FitText>
+            {/* 2줄: 고점 가격(종목 통화). 상장 1년 미만이면 52주를 다 못 채운 고점이라 표시해 둔다. */}
+            <FitText className="font-mono text-muted-foreground">
+              {`${drawdown.partial ? "1년 미만 · " : ""}${isOverseas ? fmtUsd(drawdown.high) : fmtWon(drawdown.high)}`}
+            </FitText>
+          </>
+        ) : (
+          <FitText className="text-muted-foreground">{drawdownLoading ? "…" : "-"}</FitText>
+        )}
       </TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-0.5">

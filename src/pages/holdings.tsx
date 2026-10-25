@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAxisCategories } from '@/hooks/useAxisCategories';
 import { useDailyReturns } from '@/hooks/useDailyReturns';
+import { useHigh52w } from '@/hooks/useHigh52w';
 import { useAddHolding, useDeleteHolding, useUpdateHolding } from '@/hooks/useHoldings';
 import { useRebalanceData } from '@/hooks/useRebalanceData';
 import { colorFor, hueForGroupIndex } from '@/lib/calc/color';
@@ -90,6 +91,13 @@ export default function HoldingsPage() {
     [filteredHoldings],
   );
   const dailyReturnsQuery = useDailyReturns(heatmapTickers, view === 'heatmap');
+  // 52주 고점은 필터와 무관하게 보유 종목 전체로 조회한다 — 필터를 바꿀 때마다 쿼리 키가
+  // 바뀌어 다시 묻지 않도록. 서버에서 하루 단위로 캐시된다(ADR-0065).
+  const allTickers = useMemo(
+    () => (data?.holdings ?? []).map((h) => h.ticker).filter((t): t is string => t !== null),
+    [data],
+  );
+  const high52wQuery = useHigh52w(allTickers);
 
   function openAddModal() {
     setEditingHolding(null);
@@ -172,6 +180,8 @@ export default function HoldingsPage() {
             <HoldingsTable
               rows={filteredHoldings}
               usdKrwRate={usdKrwRate}
+              high52wByTicker={high52wQuery.data}
+              high52wLoading={high52wQuery.isLoading}
               onEdit={openEditModal}
               onDelete={(id) => {
                 const h = data.holdings.find((holding) => holding.id === id);

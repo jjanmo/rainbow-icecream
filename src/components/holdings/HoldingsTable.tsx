@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { drawdownFrom52wHigh, type Drawdown52w } from '@/lib/calc/high52w';
 import { costKrwOf, returnColor, type HoldingCalc } from '@/lib/calc/rebalance';
+import type { High52w } from '@/lib/toss/tossHigh52wProvider';
 import { fmtSigned, fmtWon } from '@/lib/format';
 import type { Holding } from '@/types/domain';
 import { HoldingsTableRow } from './HoldingsTableRow';
 
-type SortableKey = 'name' | 'qty' | 'avgPrice' | 'price' | 'cost' | 'value' | 'return';
+type SortableKey = 'name' | 'qty' | 'avgPrice' | 'price' | 'cost' | 'value' | 'return' | 'drawdown';
 
 interface ColumnDef {
   key: string;
@@ -24,6 +26,7 @@ const COLUMNS: ColumnDef[] = [
   { key: 'cost', label: '매입금액', width: 100, align: 'right', sortKey: 'cost' },
   { key: 'value', label: '평가금액', width: 100, align: 'right', sortKey: 'value' },
   { key: 'return', label: '수익률', width: 70, align: 'right', sortKey: 'return' },
+  { key: 'drawdown', label: '52주 고점 대비', width: 100, align: 'right', sortKey: 'drawdown' },
   { key: 'actions', label: '', width: 70, align: 'right' },
 ];
 
@@ -47,6 +50,7 @@ function compareHoldings(
   b: HoldingCalc,
   sort: SortState | null,
   usdKrwRate: number,
+  drawdownById: Map<string, Drawdown52w | null>,
 ): number {
   if (!sort) return a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
   const dir = sort.dir === 'asc' ? 1 : -1;
@@ -61,6 +65,13 @@ function compareHoldings(
       return (a.priceKrw - b.priceKrw) * dir;
     case 'cost':
       return (costKrwOf(a, usdKrwRate) - costKrwOf(b, usdKrwRate)) * dir;
+    case 'drawdown': {
+      // 값이 없는 종목(현금성·조회 실패·로딩 중)은 방향과 무관하게 항상 맨 뒤로 보낸다.
+      const da = drawdownById.get(a.id)?.drawdownPct;
+      const db = drawdownById.get(b.id)?.drawdownPct;
+      if (da == null || db == null) return (da == null ? 1 : 0) - (db == null ? 1 : 0);
+      return (da - db) * dir;
+    }
     case 'value':
       return (a.value - b.value) * dir;
     case 'return':
@@ -103,6 +114,8 @@ function SortableHeaderLabel({
 export function HoldingsTable({
   rows,
   usdKrwRate,
+  high52wByTicker,
+  high52wLoading,
   onEdit,
   onDelete,
 }: {
@@ -111,13 +124,26 @@ export function HoldingsTable({
    * 계산에만 쓴다. 실시간 환율이라 평가금액과 같은 성격의 값이다(ADR-0029/0038이
    * 지킨 "환율은 평가금액에만" 경계와 일관됨 — 실현손익에는 안 쓴다). */
   usdKrwRate: number;
+  /** 티커 → 캐시된 52주 장중 고가 (ADR-0065). 조회 실패한 티커는 없다. */
+  high52wByTicker: Record<string, High52w> | undefined;
+  high52wLoading: boolean;
   onEdit: (holding: Holding) => void;
   onDelete: (id: string) => void;
 }) {
   const [sort, setSort] = useState<SortState | null>(null);
+  const drawdownById = useMemo(
+    () =>
+      new Map(
+        rows.map((h) => [
+          h.id,
+          h.ticker ? drawdownFrom52wHigh(high52wByTicker?.[h.ticker], h.priceNative, h.hasLivePrice) : null,
+        ]),
+      ),
+    [rows, high52wByTicker],
+  );
   const sortedRows = useMemo(
-    () => [...rows].sort((a, b) => compareHoldings(a, b, sort, usdKrwRate)),
-    [rows, sort, usdKrwRate],
+    () => [...rows].sort((a, b) => compareHoldings(a, b, sort, usdKrwRate, drawdownById)),
+    [rows, sort, usdKrwRate, drawdownById],
   );
 
   const totalValue = rows.reduce((sum, h) => sum + h.value, 0);
@@ -156,6 +182,8 @@ export function HoldingsTable({
               key={holding.id}
               holding={holding}
               usdKrwRate={usdKrwRate}
+              drawdown={drawdownById.get(holding.id) ?? null}
+              drawdownLoading={high52wLoading && !!holding.ticker}
               onEdit={() => onEdit(holding)}
               onDelete={() => onDelete(holding.id)}
             />

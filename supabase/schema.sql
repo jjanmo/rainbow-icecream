@@ -787,3 +787,36 @@ begin
   end if;
 end $$;
 
+
+-- ---------------------------------------------------------------------------
+-- Migration: 52주 고점 일별 캐시 (ADR-0065). 종목별 최근 52주 일봉 장중 고가의 최댓값을
+-- "하루(KST) 한 번" Toss 캔들로 계산해 저장한다 — 심볼당 캔들 API 2페이지가 필요해서
+-- 현재가처럼 매번 조회할 수 없기 때문이다. 화면에서는 이 값과 실시간 현재가 중 큰 값을
+-- 52주 고점으로 쓴다(현재가 자체는 여기 저장하지 않는다). fx_rate_daily처럼 유저 스코핑
+-- 없는 공용 시세 캐시이고, 한 번 저장된 (symbol, as_of) 행은 바꾸지 않는다(insert만).
+-- ---------------------------------------------------------------------------
+create table if not exists price_high_52w (
+  symbol text not null,
+  -- 이 값을 계산한 날짜(KST). 캐시 키 — 날짜가 바뀌면 새로 계산한다.
+  as_of date not null,
+  -- 종목 통화(국내 KRW, 해외 USD) 기준 장중 고가.
+  high_price numeric not null check (high_price > 0),
+  -- 계산에 쓴 가장 오래된 일봉 날짜. partial이면 상장 1년 미만이라 52주를 다 못 채운 것.
+  since_date date not null,
+  partial boolean not null default false,
+  created_at timestamptz not null default now(),
+  primary key (symbol, as_of)
+);
+comment on table price_high_52w is '종목별 52주 장중 고가 일별 캐시(Toss 캔들 기준). ADR-0065.';
+
+alter table price_high_52w enable row level security;
+
+drop policy if exists "authenticated read price highs" on price_high_52w;
+create policy "authenticated read price highs" on price_high_52w
+  for select
+  using (auth.uid() is not null);
+
+drop policy if exists "authenticated write price highs" on price_high_52w;
+create policy "authenticated write price highs" on price_high_52w
+  for insert
+  with check (auth.uid() is not null);

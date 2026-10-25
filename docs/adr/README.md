@@ -69,6 +69,7 @@
 | [0061](./0061-asset-type-account-option-revision.md) | 자산종류·계좌 옵션 개편 | Accepted |
 | [0062](./0062-role-sector-fixed-axes.md) | 자유 커스텀 탭 폐기, "역할(고정)→섹터(자유, 종속)" 2단 분류로 교체 | Partially superseded by ADR-0063 |
 | [0063](./0063-unify-role-sector-axis-categories.md) | 역할·섹터를 axis_categories 테이블로 통합, 역할도 동적 목록으로 | Accepted |
+| [0065](./0065-52-week-high-drawdown.md) | 52주 고점 대비 하락률 — 일별 DB 캐시 + 실시간 현재가 | Accepted |
 
 ## 새 ADR 작성 형식
 
