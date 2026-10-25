@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { returnColor, type HoldingCalc } from '@/lib/calc/rebalance';
+import { costKrwOf, returnColor, type HoldingCalc } from '@/lib/calc/rebalance';
 import { fmtSigned, fmtWon } from '@/lib/format';
-import { ASSET_TYPE_LABELS, type Holding } from '@/types/domain';
+import type { Holding } from '@/types/domain';
 import { HoldingsTableRow } from './HoldingsTableRow';
 
-type SortableKey = 'name' | 'role' | 'sector' | 'account' | 'qty' | 'avgPrice' | 'price' | 'value' | 'return' | 'assetType';
+type SortableKey = 'name' | 'qty' | 'avgPrice' | 'price' | 'cost' | 'value' | 'return';
 
 interface ColumnDef {
   key: string;
@@ -18,13 +18,10 @@ interface ColumnDef {
 
 const COLUMNS: ColumnDef[] = [
   { key: 'name', label: '종목', width: 170, align: 'left', sortKey: 'name' },
-  { key: 'role', label: '역할', width: 70, align: 'left', sortKey: 'role' },
-  { key: 'sector', label: '섹터', width: 110, align: 'left', sortKey: 'sector' },
-  { key: 'assetType', label: '자산종류', width: 90, align: 'left', sortKey: 'assetType' },
-  { key: 'accountRegion', label: '계좌·지역', width: 90, align: 'left', sortKey: 'account' },
   { key: 'qty', label: '수량', width: 70, align: 'right', sortKey: 'qty' },
   { key: 'avgPrice', label: '평균매입가', width: 90, align: 'right', sortKey: 'avgPrice' },
   { key: 'price', label: '현재가', width: 100, align: 'right', sortKey: 'price' },
+  { key: 'cost', label: '매입금액', width: 100, align: 'right', sortKey: 'cost' },
   { key: 'value', label: '평가금액', width: 100, align: 'right', sortKey: 'value' },
   { key: 'return', label: '수익률', width: 70, align: 'right', sortKey: 'return' },
   { key: 'actions', label: '', width: 70, align: 'right' },
@@ -49,47 +46,25 @@ function compareHoldings(
   a: HoldingCalc,
   b: HoldingCalc,
   sort: SortState | null,
-  roleNameById: Map<string, string>,
-  sectorNameById: Map<string, string>,
+  usdKrwRate: number,
 ): number {
   if (!sort) return a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
   const dir = sort.dir === 'asc' ? 1 : -1;
   switch (sort.key) {
     case 'name':
       return a.name.localeCompare(b.name, 'ko') * dir;
-    case 'role':
-      return (
-        (a.roleId ? (roleNameById.get(a.roleId) ?? '') : '').localeCompare(
-          b.roleId ? (roleNameById.get(b.roleId) ?? '') : '',
-          'ko',
-        ) * dir
-      );
-    case 'sector':
-      return (
-        (a.sectorId ? (sectorNameById.get(a.sectorId) ?? '') : '').localeCompare(
-          b.sectorId ? (sectorNameById.get(b.sectorId) ?? '') : '',
-          'ko',
-        ) * dir
-      );
-    case 'account':
-      return (a.account ?? '').localeCompare(b.account ?? '', 'ko') * dir;
     case 'qty':
       return (a.qty - b.qty) * dir;
     case 'avgPrice':
       return (a.avgPrice - b.avgPrice) * dir;
     case 'price':
       return (a.priceKrw - b.priceKrw) * dir;
+    case 'cost':
+      return (costKrwOf(a, usdKrwRate) - costKrwOf(b, usdKrwRate)) * dir;
     case 'value':
       return (a.value - b.value) * dir;
     case 'return':
       return (a.returnPct - b.returnPct) * dir;
-    case 'assetType':
-      return (
-        (a.assetType ? ASSET_TYPE_LABELS[a.assetType] : '').localeCompare(
-          b.assetType ? ASSET_TYPE_LABELS[b.assetType] : '',
-          'ko',
-        ) * dir
-      );
   }
 }
 
@@ -128,8 +103,6 @@ function SortableHeaderLabel({
 export function HoldingsTable({
   rows,
   usdKrwRate,
-  roleNameById,
-  sectorNameById,
   onEdit,
   onDelete,
 }: {
@@ -138,24 +111,17 @@ export function HoldingsTable({
    * 계산에만 쓴다. 실시간 환율이라 평가금액과 같은 성격의 값이다(ADR-0029/0038이
    * 지킨 "환율은 평가금액에만" 경계와 일관됨 — 실현손익에는 안 쓴다). */
   usdKrwRate: number;
-  /** 역할 id → 이름 (ADR-0063, 역할도 동적 목록이라 고정 라벨 맵이 없다). */
-  roleNameById: Map<string, string>;
-  /** 섹터 id → 이름 (ADR-0062, 역할/섹터는 이제 종목 컬럼에 항상 고정으로 뜬다). */
-  sectorNameById: Map<string, string>;
   onEdit: (holding: Holding) => void;
   onDelete: (id: string) => void;
 }) {
   const [sort, setSort] = useState<SortState | null>(null);
   const sortedRows = useMemo(
-    () => [...rows].sort((a, b) => compareHoldings(a, b, sort, roleNameById, sectorNameById)),
-    [rows, sort, roleNameById, sectorNameById],
+    () => [...rows].sort((a, b) => compareHoldings(a, b, sort, usdKrwRate)),
+    [rows, sort, usdKrwRate],
   );
 
   const totalValue = rows.reduce((sum, h) => sum + h.value, 0);
-  const totalCostKrw = rows.reduce(
-    (sum, h) => sum + h.qty * h.avgPrice * (h.nativeCurrency === 'USD' ? usdKrwRate : 1),
-    0,
-  );
+  const totalCostKrw = rows.reduce((sum, h) => sum + costKrwOf(h, usdKrwRate), 0);
   const totalReturnPct = totalCostKrw > 0 ? ((totalValue - totalCostKrw) / totalCostKrw) * 100 : 0;
 
   return (
@@ -189,8 +155,7 @@ export function HoldingsTable({
             <HoldingsTableRow
               key={holding.id}
               holding={holding}
-              roleNameById={roleNameById}
-              sectorNameById={sectorNameById}
+              usdKrwRate={usdKrwRate}
               onEdit={() => onEdit(holding)}
               onDelete={() => onDelete(holding.id)}
             />
@@ -207,10 +172,10 @@ export function HoldingsTable({
                     </TableCell>
                   );
                 }
-                if (col.key === 'value') {
+                if (col.key === 'cost' || col.key === 'value') {
                   return (
                     <TableCell key={col.key} className="text-right font-mono font-semibold">
-                      {fmtWon(totalValue)}
+                      {fmtWon(col.key === 'cost' ? totalCostKrw : totalValue)}
                     </TableCell>
                   );
                 }

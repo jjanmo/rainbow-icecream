@@ -1,25 +1,25 @@
 import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
-import { returnColor, type HoldingCalc } from "@/lib/calc/rebalance";
+import { costKrwOf, returnColor, type HoldingCalc } from "@/lib/calc/rebalance";
 import { fmtQty, fmtSigned, fmtUsd, fmtWon } from "@/lib/format";
-import { ASSET_TYPE_LABELS } from "@/types/domain";
 import { FitText } from "./FitText";
 
 export function HoldingsTableRow({
   holding,
-  roleNameById,
-  sectorNameById,
+  usdKrwRate,
   onEdit,
   onDelete,
 }: {
   holding: HoldingCalc;
-  roleNameById: Map<string, string>;
-  sectorNameById: Map<string, string>;
+  /** 해외 종목의 투입 원가를 원화로 바꿔 매입금액 열에 쓴다 — 표 하단 총 매입금액과
+   * 같은 실시간 환율이다. */
+  usdKrwRate: number;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const isOverseas = holding.nativeCurrency === "USD";
+  const costKrw = costKrwOf(holding, usdKrwRate);
 
   return (
     <TableRow>
@@ -30,23 +30,6 @@ export function HoldingsTableRow({
             <FitText className="font-mono text-muted-foreground">{holding.ticker || " "}</FitText>
           </div>
         </div>
-      </TableCell>
-      <TableCell>
-        <FitText className={holding.roleId ? undefined : "text-muted-foreground italic"}>
-          {holding.roleId ? (roleNameById.get(holding.roleId) ?? "-") : "미분류"}
-        </FitText>
-      </TableCell>
-      <TableCell>
-        <FitText className={holding.sectorId ? undefined : "text-muted-foreground italic"}>
-          {holding.sectorId ? (sectorNameById.get(holding.sectorId) ?? "-") : "미지정"}
-        </FitText>
-      </TableCell>
-      <TableCell>
-        <FitText className="text-muted-foreground">{ASSET_TYPE_LABELS[holding.assetType]}</FitText>
-      </TableCell>
-      <TableCell>
-        <FitText>{holding.account || "-"}</FitText>
-        <FitText className="text-muted-foreground">{holding.region}</FitText>
       </TableCell>
       <TableCell className="text-right">
         <FitText className="font-mono">{fmtQty(holding.qty)}</FitText>
@@ -60,6 +43,12 @@ export function HoldingsTableRow({
         </FitText>
         {isOverseas && (
           <FitText className="font-mono text-muted-foreground">{fmtUsd(holding.priceNative)}</FitText>
+        )}
+      </TableCell>
+      <TableCell className="text-right">
+        <FitText className="font-mono">{fmtWon(costKrw)}</FitText>
+        {isOverseas && (
+          <FitText className="font-mono text-muted-foreground">{fmtUsd(holding.qty * holding.avgPrice)}</FitText>
         )}
       </TableCell>
       <TableCell className="text-right">

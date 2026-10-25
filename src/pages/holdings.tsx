@@ -172,8 +172,6 @@ export default function HoldingsPage() {
             <HoldingsTable
               rows={filteredHoldings}
               usdKrwRate={usdKrwRate}
-              roleNameById={roleNameById}
-              sectorNameById={sectorNameById}
               onEdit={openEditModal}
               onDelete={(id) => {
                 const h = data.holdings.find((holding) => holding.id === id);

@@ -131,6 +131,12 @@ export function diffColor(diff: number): string {
   return diff > 0 ? RISE_COLOR : FALL_COLOR;
 }
 
+/** 매입금액(투입 원가)의 원화 환산 — 해외 종목은 평단(달러)에 실시간 환율을 곱한다.
+ * 평가금액과 같은 성격의 값이라 실현손익(ADR-0038, 환산 안 함)과는 별개다. */
+export function costKrwOf(h: Pick<HoldingCalc, "qty" | "avgPrice" | "nativeCurrency">, usdKrwRate: number): number {
+  return h.qty * h.avgPrice * (h.nativeCurrency === "USD" ? usdKrwRate : 1);
+}
+
 export function returnColor(returnPct: number): string {
   if (returnPct > 0) return GOOD_COLOR;
   if (returnPct < 0) return LOSS_COLOR;
