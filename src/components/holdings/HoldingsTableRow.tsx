@@ -28,10 +28,12 @@ export function HoldingsTableRow({
   const isOverseas = holding.nativeCurrency === "USD";
   const costKrw = costKrwOf(holding, usdKrwRate);
   const signal = tradePlanSignalOf(holding, usdKrwRate);
+  // 손절 신호만 행을 칠한다 — 정찰병 미달은 색 없음(TRADE_PLAN_SIGNAL_BG 참고).
+  const rowBg = signal ? TRADE_PLAN_SIGNAL_BG[signal] : undefined;
   const plan = buyPlanCell(holding, costKrw);
 
   return (
-    <TableRow style={signal ? { backgroundColor: TRADE_PLAN_SIGNAL_BG[signal] } : undefined}>
+    <TableRow style={rowBg ? { backgroundColor: rowBg } : undefined}>
       <TableCell>
         <div className="flex items-center gap-1.5">
           <div className="min-w-0">

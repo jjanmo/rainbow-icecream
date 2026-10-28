@@ -24,8 +24,9 @@ import { useHigh52w } from '@/hooks/useHigh52w';
 import { useAddHolding, useDeleteHolding, useUpdateHolding } from '@/hooks/useHoldings';
 import { useRebalanceData } from '@/hooks/useRebalanceData';
 import { colorFor, hueForGroupIndex } from '@/lib/calc/color';
+import { drawdownFrom52wHigh } from '@/lib/calc/high52w';
 import type { HoldingCalc } from '@/lib/calc/rebalance';
-import { tradePlanSignalsOf, type TradePlanSignal } from '@/lib/calc/tradePlan';
+import { holdingPresetsOf, type HoldingPreset } from '@/lib/calc/tradePlan';
 import { buildHoldingsMarkdownTable } from '@/lib/holdingsExport';
 import type { Holding, NewHolding } from '@/types/domain';
 import { cn, downloadTextFile } from '@/lib/utils';
@@ -42,7 +43,7 @@ export default function HoldingsPage() {
   const sectorCategoriesQuery = useAxisCategories('sector');
 
   const [filter, setFilter] = useState<HoldingsFilter>(ALL_HOLDINGS_FILTER);
-  const [signalPreset, setSignalPreset] = useState<TradePlanSignal | null>(null);
+  const [preset, setPreset] = useState<HoldingPreset | null>(null);
   const [view, setView] = useState<HoldingsView>('table');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingHolding, setEditingHolding] = useState<Holding | null>(null);
@@ -62,28 +63,50 @@ export default function HoldingsPage() {
     return map;
   }, [sectorCategories]);
 
+  // 52주 고점은 필터와 무관하게 보유 종목 전체로 조회한다 — 필터를 바꿀 때마다 쿼리 키가
+  // 바뀌어 다시 묻지 않도록. 서버에서 하루 단위로 캐시된다(ADR-0065).
+  const allTickers = useMemo(
+    () => (data?.holdings ?? []).map((h) => h.ticker).filter((t): t is string => t !== null),
+    [data],
+  );
+  const high52wQuery = useHigh52w(allTickers);
+  // 52주 고점 대비 하락률 — 표의 "52주 고점 대비" 열과 프리셋 칩이 같은 값을 쓰도록 여기서 한 번만 계산한다.
+  const drawdownById = useMemo(
+    () =>
+      new Map(
+        (data?.holdings ?? []).map((h) => [
+          h.id,
+          h.ticker ? drawdownFrom52wHigh(high52wQuery.data?.[h.ticker], h.priceNative, h.hasLivePrice) : null,
+        ]),
+      ),
+    [data, high52wQuery.data],
+  );
+
   // 필터 바(지역/역할/…)를 먼저 적용한 결과 — 프리셋 칩의 개수는 이 기준으로 센다.
   const barFilteredHoldings = useMemo(() => {
     if (!data) return [];
     return data.holdings.filter((h) => matchesHoldingsFilter(h, filter));
   }, [data, filter]);
-  // 프리셋 칩은 행 색상(가장 위험한 신호 하나)이 아니라 "그 조건에 걸렸는가"로 거른다 —
-  // 정찰병 미달이면서 손절 경고인 종목도 "정찰병 미달" 칩에 나와야 한다.
-  const signalsById = useMemo(
-    () => new Map(barFilteredHoldings.map((h) => [h.id, tradePlanSignalsOf(h, usdKrwRate)])),
-    [barFilteredHoldings, usdKrwRate],
-  );
-  const signalCounts = useMemo(() => {
-    const counts: Partial<Record<TradePlanSignal, number>> = {};
-    signalsById.forEach((signals) => signals.forEach((s) => (counts[s] = (counts[s] ?? 0) + 1)));
-    return counts;
-  }, [signalsById]);
-  const filteredHoldings = useMemo(
+  // 프리셋 칩(정찰병·정찰병추매·추매시점1·적립식)은 행 색상(가장 위험한 신호 하나)이 아니라 "그 조건에
+  // 걸렸는가"로 거른다 — holdingPresetsOf 참고.
+  const presetsById = useMemo(
     () =>
-      signalPreset
-        ? barFilteredHoldings.filter((h) => signalsById.get(h.id)?.includes(signalPreset))
-        : barFilteredHoldings,
-    [barFilteredHoldings, signalsById, signalPreset],
+      new Map(
+        barFilteredHoldings.map((h) => [
+          h.id,
+          holdingPresetsOf(h, usdKrwRate, drawdownById.get(h.id)?.drawdownPct ?? null),
+        ]),
+      ),
+    [barFilteredHoldings, usdKrwRate, drawdownById],
+  );
+  const presetCounts = useMemo(() => {
+    const counts: Partial<Record<HoldingPreset, number>> = {};
+    presetsById.forEach((presets) => presets.forEach((p) => (counts[p] = (counts[p] ?? 0) + 1)));
+    return counts;
+  }, [presetsById]);
+  const filteredHoldings = useMemo(
+    () => (preset ? barFilteredHoldings.filter((h) => presetsById.get(h.id)?.includes(preset)) : barFilteredHoldings),
+    [barFilteredHoldings, presetsById, preset],
   );
 
   const accountOptions = useMemo(() => {
@@ -113,13 +136,6 @@ export default function HoldingsPage() {
     [filteredHoldings],
   );
   const dailyReturnsQuery = useDailyReturns(heatmapTickers, view === 'heatmap');
-  // 52주 고점은 필터와 무관하게 보유 종목 전체로 조회한다 — 필터를 바꿀 때마다 쿼리 키가
-  // 바뀌어 다시 묻지 않도록. 서버에서 하루 단위로 캐시된다(ADR-0065).
-  const allTickers = useMemo(
-    () => (data?.holdings ?? []).map((h) => h.ticker).filter((t): t is string => t !== null),
-    [data],
-  );
-  const high52wQuery = useHigh52w(allTickers);
 
   function openAddModal() {
     setEditingHolding(null);
@@ -181,7 +197,7 @@ export default function HoldingsPage() {
           </div>
 
           <div className="mb-3.5">
-            <TradePlanPresetChips value={signalPreset} onChange={setSignalPreset} counts={signalCounts} />
+            <TradePlanPresetChips value={preset} onChange={setPreset} counts={presetCounts} />
           </div>
 
           <div className="mb-3.5 flex gap-1.5">
@@ -206,7 +222,7 @@ export default function HoldingsPage() {
             <HoldingsTable
               rows={filteredHoldings}
               usdKrwRate={usdKrwRate}
-              high52wByTicker={high52wQuery.data}
+              drawdownById={drawdownById}
               high52wLoading={high52wQuery.isLoading}
               onEdit={openEditModal}
               onDelete={(id) => {

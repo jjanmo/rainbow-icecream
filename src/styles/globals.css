@@ -29,7 +29,6 @@
 
   /* 매매 계획 신호의 행 배경 (ADR-0064, lib/calc/tradePlan.ts). 글자 위에 깔리는
      배경이라 옅은 틴트만 쓰고, 다크 테마에선 명도를 낮춘 반투명 틴트로 바꾼다. */
-  --plan-scout-bg: oklch(92% 0.05 230);
   --plan-warn-bg: oklch(94% 0.08 95);
   --plan-stop-bg: oklch(91% 0.06 22);
 
@@ -131,7 +130,6 @@ body {
   --diff-rise-strong: oklch(79% 0.12 24);
   --diff-fall-strong: oklch(82% 0.09 252);
 
-  --plan-scout-bg: oklch(45% 0.09 230 / 0.35);
   --plan-warn-bg: oklch(55% 0.11 95 / 0.3);
   --plan-stop-bg: oklch(50% 0.15 22 / 0.35);
 

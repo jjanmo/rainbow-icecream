@@ -1,4 +1,5 @@
 import { fmtQty } from "@/lib/format";
+import { hueForGroupIndex } from "./color";
 import { costKrwOf, type HoldingCalc } from "./rebalance";
 import type { Holding } from "@/types/domain";
 
@@ -39,22 +40,93 @@ export function tradePlanSignalOf(holding: HoldingCalc, usdKrwRate: number): Tra
   return tradePlanSignalsOf(holding, usdKrwRate)[0] ?? null;
 }
 
-/** `/holdings` 프리셋 필터 칩으로 노출하는 신호 — 손절 관련 칩은 사용자 요청으로 뺐다
- * (행 색상으로는 여전히 표시된다). */
-export const TRADE_PLAN_PRESET_SIGNALS: TradePlanSignal[] = ["SCOUT_UNFILLED"];
-
-export const TRADE_PLAN_SIGNAL_LABELS: Record<TradePlanSignal, string> = {
-  STOP_LOSS: "손절라인 이하",
-  STOP_WARNING: `손절라인 ${STOP_LOSS_WARNING_MARGIN_PCT}%p 이내`,
-  SCOUT_UNFILLED: "정찰병 미달",
-};
-
-/** 행 배경 — 테마별로 명도를 따로 잡은 CSS 변수(`styles/globals.css`). */
-export const TRADE_PLAN_SIGNAL_BG: Record<TradePlanSignal, string> = {
+/** 행 배경 — 테마별로 명도를 따로 잡은 CSS 변수(`styles/globals.css`). 손절 신호만 칠한다 —
+ * 정찰병 미달 행 배경(하늘색)은 사용자 요청으로 뺐다(프리셋 칩으로만 거른다). */
+export const TRADE_PLAN_SIGNAL_BG: Partial<Record<TradePlanSignal, string>> = {
   STOP_LOSS: "var(--plan-stop-bg)",
   STOP_WARNING: "var(--plan-warn-bg)",
-  SCOUT_UNFILLED: "var(--plan-scout-bg)",
 };
+
+/** `/holdings` 프리셋 필터 칩. 신호(정찰병 미달)와 계획 속성(적립식), 시세 조건(52주 고점
+ * 대비 하락)이 섞여 있어서 TradePlanSignal과 별개 타입으로 둔다 — 정찰병 미달 외에는 행 색상이
+ * 없는 순수 필터다. 손절 관련 칩은 사용자 요청으로 뺐다(행 색상으로는 여전히 표시된다).
+ * - SCOUT_DIP(정찰병추매): 정찰병 미달이면서 52주 고점 대비 SCOUT_DIP_THRESHOLD_PCT 이하로 빠진
+ *   종목 — "정찰병을 채울 만큼 눌렸는가"를 한 번에 거르는 칩.
+ * - ADD_BUY_1(추매시점1): 정찰병은 채웠지만 최대 금액엔 아직 못 미친 종목(정찰병 금액 ≤ 원가 <
+ *   최대 매수 금액) 중에서, 52주 고점 대비와 수익률이 둘 다 ADD_BUY_1_THRESHOLD_PCT 이하로 빠진
+ *   종목. 정찰병 금액이나 최대 매수 금액을 안 정한 종목(적립식·미정 포함)은 판단할 수 없어 제외.
+ * - HOLD(홀드): 원가가 최대 매수 금액 이상 — 더 사지 않고 들고 가는 종목. ADD_BUY_1의 "원가 <
+ *   최대"와 경계가 맞물리도록 같은 값은 홀드 쪽에 넣는다. 최대 매수 금액이 없으면 제외. */
+export type HoldingPreset = "SCOUT_UNFILLED" | "SCOUT_DIP" | "ADD_BUY_1" | "HOLD" | "DCA";
+
+/** SCOUT_DIP 칩 기준 — 52주 고점 대비 하락률이 이 값 이하(%, 경계 포함, 아래쪽 제한 없음). */
+export const SCOUT_DIP_THRESHOLD_PCT = -5;
+
+/** ADD_BUY_1 칩 기준 — 52주 고점 대비 하락률과 수익률이 둘 다 이 값 이하(%, 경계 포함). */
+export const ADD_BUY_1_THRESHOLD_PCT = -10;
+
+export const HOLDING_PRESETS: HoldingPreset[] = ["SCOUT_UNFILLED", "SCOUT_DIP", "ADD_BUY_1", "HOLD", "DCA"];
+
+export const HOLDING_PRESET_LABELS: Record<HoldingPreset, string> = {
+  SCOUT_UNFILLED: "정찰병",
+  SCOUT_DIP: "정찰병추매",
+  ADD_BUY_1: "추매시점1",
+  HOLD: "홀드",
+  DCA: "적립식",
+};
+
+/** 칩 조건 설명 — 칩 hover 툴팁과 칩 줄 끝 "?" 팝오버가 같이 쓴다. 기준값은 상수에서 만든다. */
+export const HOLDING_PRESET_DESCRIPTIONS: Record<HoldingPreset, string> = {
+  SCOUT_UNFILLED: "매입금액이 정찰병 금액보다 적은 종목",
+  SCOUT_DIP: `정찰병 미달이면서 52주 고점 대비 ${SCOUT_DIP_THRESHOLD_PCT}% 이하 구간인 종목`,
+  ADD_BUY_1: `정찰병 금액 ≤ 매입금액 < 최대 매수 금액이면서, 52주 고점 대비와 수익률이 둘 다 ${ADD_BUY_1_THRESHOLD_PCT}% 이하인 종목`,
+  HOLD: "매입금액이 최대 매수 금액 이상인 종목(최대 금액을 넘어선 종목)",
+  DCA: "매매 계획에서 적립식으로 정한 종목",
+};
+
+/** 칩 배경 — 칩마다 서로 다른 색. 칩 순서대로 색상환을 균등하게 나눠(hueForGroupIndex) 고정
+ * 색을 정한다(진짜 랜덤이면 새로고침마다 색이 바뀌어 헷갈린다). 반투명 틴트라 라이트/다크 테마
+ * 모두 기본 글자색 위에서 읽힌다. 칩을 추가하면 색이 다시 고르게 나눠진다. */
+export const HOLDING_PRESET_BG = Object.fromEntries(
+  HOLDING_PRESETS.map((p, i) => [p, `oklch(70% 0.13 ${hueForGroupIndex(i, HOLDING_PRESETS.length)} / 0.3)`]),
+) as Record<HoldingPreset, string>;
+
+/** 종목이 걸리는 프리셋 전부 — 신호는 행 색상(최우선 하나)이 아니라 조건 충족 여부로 본다.
+ * 정찰병 미달이면서 손절 경고인 종목도 "정찰병 미달" 칩에 나와야 하기 때문이다.
+ * `drawdownPct`는 52주 고점 대비 하락률(drawdownFrom52wHigh) — 값이 없으면(현금성·조회 실패·
+ * 로딩 중) null이고, 그때는 고점 조건이 있는 칩(SCOUT_DIP·ADD_BUY_1)에 걸리지 않는다(0%로
+ * 취급하지 않는다). 수익률은 표 수익률 열과 같은 `returnPct`(종목 통화 기준)를 쓴다. */
+export function holdingPresetsOf(
+  holding: HoldingCalc,
+  usdKrwRate: number,
+  drawdownPct: number | null,
+): HoldingPreset[] {
+  const presets: HoldingPreset[] = [];
+  const scoutUnfilled = tradePlanSignalsOf(holding, usdKrwRate).includes("SCOUT_UNFILLED");
+  if (scoutUnfilled) {
+    presets.push("SCOUT_UNFILLED");
+    if (drawdownPct != null && drawdownPct <= SCOUT_DIP_THRESHOLD_PCT) {
+      presets.push("SCOUT_DIP");
+    }
+  }
+  const scoutFilled = holding.scoutAmount != null && !scoutUnfilled;
+  // 최대 금액 지정 모드에서 금액을 정했을 때만 판단한다 — 적립식·미정은 maxBuyAmount가 null이다.
+  const maxBuy = holding.maxBuyAmount;
+  const hasMax = maxBuy != null;
+  const belowMax = maxBuy != null && costKrwOf(holding, usdKrwRate) < maxBuy;
+  if (
+    scoutFilled &&
+    belowMax &&
+    drawdownPct != null &&
+    drawdownPct <= ADD_BUY_1_THRESHOLD_PCT &&
+    holding.returnPct <= ADD_BUY_1_THRESHOLD_PCT
+  ) {
+    presets.push("ADD_BUY_1");
+  }
+  if (hasMax && !belowMax) presets.push("HOLD");
+  if (holding.isDca) presets.push("DCA");
+  return presets;
+}
 
 /** 계획 금액(항상 원화)의 짧은 표기 — 입력 단위와 같은 만원 단위("500만", "0.5만"). */
 export function fmtPlanAmount(n: number): string {

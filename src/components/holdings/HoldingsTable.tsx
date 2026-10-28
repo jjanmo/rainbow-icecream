@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { drawdownFrom52wHigh, type Drawdown52w } from '@/lib/calc/high52w';
+import type { Drawdown52w } from '@/lib/calc/high52w';
 import { costKrwOf, returnColor, type HoldingCalc } from '@/lib/calc/rebalance';
-import type { High52w } from '@/lib/toss/tossHigh52wProvider';
 import { fmtSigned, fmtWon } from '@/lib/format';
 import type { Holding } from '@/types/domain';
 import { HoldingsTableRow } from './HoldingsTableRow';
@@ -118,7 +117,7 @@ function SortableHeaderLabel({
 export function HoldingsTable({
   rows,
   usdKrwRate,
-  high52wByTicker,
+  drawdownById,
   high52wLoading,
   onEdit,
   onDelete,
@@ -128,23 +127,14 @@ export function HoldingsTable({
    * 계산에만 쓴다. 실시간 환율이라 평가금액과 같은 성격의 값이다(ADR-0029/0038이
    * 지킨 "환율은 평가금액에만" 경계와 일관됨 — 실현손익에는 안 쓴다). */
   usdKrwRate: number;
-  /** 티커 → 캐시된 52주 장중 고가 (ADR-0065). 조회 실패한 티커는 없다. */
-  high52wByTicker: Record<string, High52w> | undefined;
+  /** 종목 id → 52주 고점 대비 하락률(ADR-0065). 페이지가 계산해 넘긴다 — 프리셋 칩도 같은
+   * 값을 쓰기 때문이다. null = 현금성·조회 실패·로딩 중. */
+  drawdownById: Map<string, Drawdown52w | null>;
   high52wLoading: boolean;
   onEdit: (holding: Holding) => void;
   onDelete: (id: string) => void;
 }) {
   const [sort, setSort] = useState<SortState | null>(null);
-  const drawdownById = useMemo(
-    () =>
-      new Map(
-        rows.map((h) => [
-          h.id,
-          h.ticker ? drawdownFrom52wHigh(high52wByTicker?.[h.ticker], h.priceNative, h.hasLivePrice) : null,
-        ]),
-      ),
-    [rows, high52wByTicker],
-  );
   const sortedRows = useMemo(
     () => [...rows].sort((a, b) => compareHoldings(a, b, sort, usdKrwRate, drawdownById)),
     [rows, sort, usdKrwRate, drawdownById],
