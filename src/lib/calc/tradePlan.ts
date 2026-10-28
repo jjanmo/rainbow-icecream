@@ -64,9 +64,11 @@ export function fmtPlanAmount(n: number): string {
 /** 매주 적립 요일 라벨 — dcaDay 1=월 … 7=일. */
 export const WEEKDAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 
-/** 적립 일정 표기 — "매월 25일 50만", "매주 월 2주", "매일 1만". 정한 부분만 붙인다. */
+/** 적립 일정 표기 — "매월 25일 50만", "매주 월 2주", "매일 1만". 정한 부분만 붙인다.
+ * `unitWon`이면 금액을 "50만원"처럼 원까지 붙인다(보유 종목 표 표기). */
 export function fmtDcaSchedule(
   holding: Pick<Holding, "dcaFrequency" | "dcaDay" | "dcaAmount" | "dcaQty">,
+  { unitWon = false }: { unitWon?: boolean } = {},
 ): string | null {
   const when =
     holding.dcaFrequency == null
@@ -78,7 +80,7 @@ export function fmtDcaSchedule(
           : `매월${holding.dcaDay != null ? ` ${holding.dcaDay}일` : ""}`;
   const amount =
     holding.dcaAmount != null
-      ? fmtPlanAmount(holding.dcaAmount)
+      ? fmtPlanAmount(holding.dcaAmount) + (unitWon ? "원" : "")
       : holding.dcaQty != null
         ? `${fmtQty(holding.dcaQty)}주`
         : null;
@@ -100,4 +102,33 @@ export function fmtMaxBuyPlan(
   if (holding.maxBuyAmount == null) return null;
   const amount = fmtPlanAmount(holding.maxBuyAmount);
   return holding.splitCount != null ? `${amount}/${holding.splitCount}` : amount;
+}
+
+/** `/holdings` 표 "매매 계획" 열의 표기 — 포맷만 봐도 방식이 구분된다:
+ * - 최대 금액 지정(CAP): 2줄 — 1줄 정찰병 금액 "50만원"(안 정했으면 null), 2줄 "200만원(150만원)"
+ *   — 괄호는 최대 금액 − 매입금액(남은 한도, 넘었으면 음수)
+ * - 적립식(DCA): 1줄 "매월 25일 50만원" / "매주 월 2주" / "매일 1만원" (일정을 안 정했으면 "적립식")
+ * 최대 금액 미정·계획 없음·최대 금액 미입력은 null(빈 칸). 손절라인은 행 색상이 이미 보여주므로
+ * 넣지 않는다. 매입금액은 표 매입금액 열과 같은 원화 환산값(costKrwOf)을 받는다. */
+export type BuyPlanCell = { kind: "CAP"; scout: string | null; max: string } | { kind: "DCA"; text: string };
+
+export function buyPlanCell(
+  holding: Pick<
+    Holding,
+    "scoutAmount" | "maxBuyAmount" | "isDca" | "maxUndecided" | "dcaFrequency" | "dcaDay" | "dcaAmount" | "dcaQty"
+  >,
+  costKrw: number,
+): BuyPlanCell | null {
+  if (holding.isDca) return { kind: "DCA", text: fmtDcaSchedule(holding, { unitWon: true }) ?? "적립식" };
+  if (holding.maxUndecided || holding.maxBuyAmount == null) return null;
+  // 남은 한도는 원 단위 원가에서 나온 값이라 만원 소수가 길어지므로 소수 1자리까지만.
+  // 반올림하면 0이 되는 작은 음수는 "-0"으로 보이지 않게 0으로 맞춘다.
+  const raw = (holding.maxBuyAmount - costKrw) / 10000;
+  const remaining = Math.abs(raw) < 0.05 ? 0 : raw;
+  const remainingText = remaining.toLocaleString("ko-KR", { maximumFractionDigits: 1 });
+  return {
+    kind: "CAP",
+    scout: holding.scoutAmount != null ? `${fmtPlanAmount(holding.scoutAmount)}원` : null,
+    max: `${fmtPlanAmount(holding.maxBuyAmount)}원(${remainingText}만원)`,
+  };
 }

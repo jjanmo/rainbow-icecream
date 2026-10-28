@@ -30,6 +30,7 @@ const COLUMNS: ColumnDef[] = [
   { key: 'value', label: '평가금액', align: 'right', sortKey: 'value' },
   { key: 'return', label: '수익률', align: 'right', sortKey: 'return' },
   { key: 'drawdown', label: '52주 고점 대비', align: 'right', sortKey: 'drawdown' },
+  { key: 'plan', label: '매매 계획', width: 150, align: 'right' },
   { key: 'actions', label: '', width: 70, align: 'right' },
 ];
 
@@ -155,9 +156,9 @@ export function HoldingsTable({
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      {/* 최소 폭 = 고정 열(종목 160 + 버튼 70) + 숫자 열 7개 × 100 — 좁은 화면에서 숫자 열이
-          그 아래로 찌그러지는 대신 가로 스크롤된다. */}
-      <Table className="min-w-[930px] table-fixed">
+      {/* 최소 폭 = 고정 열(종목 160 + 매매 계획 150 + 버튼 70) + 숫자 열 7개 × 100 — 좁은
+          화면에서 숫자 열이 그 아래로 찌그러지는 대신 가로 스크롤된다. */}
+      <Table className="min-w-[1080px] table-fixed">
         <colgroup>
           {COLUMNS.map((col) => (
             <col key={col.key} style={col.width ? { width: col.width } : undefined} />

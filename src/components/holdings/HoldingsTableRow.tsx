@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
 import type { Drawdown52w } from "@/lib/calc/high52w";
 import { costKrwOf, diffColor, returnColor, type HoldingCalc } from "@/lib/calc/rebalance";
-import { TRADE_PLAN_SIGNAL_BG, tradePlanSignalOf } from "@/lib/calc/tradePlan";
+import { buyPlanCell, TRADE_PLAN_SIGNAL_BG, tradePlanSignalOf } from "@/lib/calc/tradePlan";
 import { fmtQty, fmtSigned, fmtUsd, fmtWon } from "@/lib/format";
 import { FitText } from "./FitText";
 
@@ -28,6 +28,7 @@ export function HoldingsTableRow({
   const isOverseas = holding.nativeCurrency === "USD";
   const costKrw = costKrwOf(holding, usdKrwRate);
   const signal = tradePlanSignalOf(holding, usdKrwRate);
+  const plan = buyPlanCell(holding, costKrw);
 
   return (
     <TableRow style={signal ? { backgroundColor: TRADE_PLAN_SIGNAL_BG[signal] } : undefined}>
@@ -83,6 +84,22 @@ export function HoldingsTableRow({
           </>
         ) : (
           <FitText className="text-muted-foreground">{drawdownLoading ? "…" : "-"}</FitText>
+        )}
+      </TableCell>
+      <TableCell className="text-right">
+        {/* 매매 계획(ADR-0064) — 최대 금액 지정·적립식일 때만 내용이 있다. 최대 금액 지정은 2줄을
+            서로 왼쪽으로 맞춘 블록을 셀 오른쪽 끝에 붙인다 — 열의 오른쪽 정렬은 유지하면서 두 줄의
+            시작점을 맞추기 위해서다. */}
+        {plan?.kind === "CAP" ? (
+          <div className="inline-block max-w-full text-left align-top">
+            {/* 두 줄 글자 크기를 긴 줄(최대 금액) 기준으로 맞춘다. */}
+            <FitText className={plan.scout ? "font-mono" : "text-muted-foreground"} sizeBy={plan.max}>
+              {plan.scout ?? "-"}
+            </FitText>
+            <FitText className="font-mono">{plan.max}</FitText>
+          </div>
+        ) : (
+          <FitText className={plan ? "font-mono" : "text-muted-foreground"}>{plan?.text ?? "-"}</FitText>
         )}
       </TableCell>
       <TableCell className="text-right">
