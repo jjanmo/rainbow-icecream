@@ -13,20 +13,23 @@ type SortableKey = 'name' | 'qty' | 'avgPrice' | 'price' | 'cost' | 'value' | 'r
 interface ColumnDef {
   key: string;
   label: string;
-  width: number;
+  /** 고정 너비(px). 비워 두면 고정 열을 뺀 나머지 폭을 다른 비고정 열과 똑같이 나눠 갖는다
+   * (table-fixed 규칙) — 화면이 넓어질 때 종목 칸만 비대해지지 않도록 숫자 열이 여유 폭을
+   * 흡수하게 한다. */
+  width?: number;
   align: 'left' | 'right';
   sortKey?: SortableKey;
 }
 
 const COLUMNS: ColumnDef[] = [
-  { key: 'name', label: '종목', width: 170, align: 'left', sortKey: 'name' },
-  { key: 'qty', label: '수량', width: 70, align: 'right', sortKey: 'qty' },
-  { key: 'avgPrice', label: '평균매입가', width: 90, align: 'right', sortKey: 'avgPrice' },
-  { key: 'price', label: '현재가', width: 100, align: 'right', sortKey: 'price' },
-  { key: 'cost', label: '매입금액', width: 100, align: 'right', sortKey: 'cost' },
-  { key: 'value', label: '평가금액', width: 100, align: 'right', sortKey: 'value' },
-  { key: 'return', label: '수익률', width: 70, align: 'right', sortKey: 'return' },
-  { key: 'drawdown', label: '52주 고점 대비', width: 100, align: 'right', sortKey: 'drawdown' },
+  { key: 'name', label: '종목', width: 160, align: 'left', sortKey: 'name' },
+  { key: 'qty', label: '수량', align: 'right', sortKey: 'qty' },
+  { key: 'avgPrice', label: '평균매입가', align: 'right', sortKey: 'avgPrice' },
+  { key: 'price', label: '현재가', align: 'right', sortKey: 'price' },
+  { key: 'cost', label: '매입금액', align: 'right', sortKey: 'cost' },
+  { key: 'value', label: '평가금액', align: 'right', sortKey: 'value' },
+  { key: 'return', label: '수익률', align: 'right', sortKey: 'return' },
+  { key: 'drawdown', label: '52주 고점 대비', align: 'right', sortKey: 'drawdown' },
   { key: 'actions', label: '', width: 70, align: 'right' },
 ];
 
@@ -152,10 +155,12 @@ export function HoldingsTable({
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <Table className="table-fixed">
+      {/* 최소 폭 = 고정 열(종목 160 + 버튼 70) + 숫자 열 7개 × 100 — 좁은 화면에서 숫자 열이
+          그 아래로 찌그러지는 대신 가로 스크롤된다. */}
+      <Table className="min-w-[930px] table-fixed">
         <colgroup>
           {COLUMNS.map((col) => (
-            <col key={col.key} style={{ width: col.width }} />
+            <col key={col.key} style={col.width ? { width: col.width } : undefined} />
           ))}
         </colgroup>
         <TableHeader>
