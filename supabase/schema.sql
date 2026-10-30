@@ -880,3 +880,35 @@ alter table holdings add column if not exists dca_qty numeric
   check (dca_qty is null or dca_qty > 0);
 alter table holdings drop constraint if exists holdings_dca_unit_check;
 alter table holdings add constraint holdings_dca_unit_check check (dca_amount is null or dca_qty is null);
+
+-- ---------------------------------------------------------------------------
+-- Migration: 종목 단위 메모 (ADR-0066). 날짜별 근거(trade_notes, 체결마다)와 별개로,
+-- 날짜·매매와 상관없이 종목에 대한 생각·포인트를 매수/매도 쪽으로 나눠 적어 두는 곳.
+-- holding 행이 아니라 identity_key(티커+지역, 현금성은 이름+지역 — journal 종목 모드의
+-- holdingIdentityKey와 같은 규칙)에 붙인다 — 전량 매도(ADR-0054 소프트 삭제) 후 재매수하면
+-- 새 holding 행이 생기므로, holding_id에 붙이면 메모가 새 행과 이어지지 않는다.
+-- 자유 서술이라 어떤 집계에도 쓰지 않는다(trade_notes.body와 같은 원칙). Idempotent.
+-- ---------------------------------------------------------------------------
+create table if not exists holding_notes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  identity_key text not null,
+  buy_memo text,
+  sell_memo text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, identity_key)
+);
+
+drop trigger if exists holding_notes_set_updated_at on holding_notes;
+create trigger holding_notes_set_updated_at
+  before update on holding_notes
+  for each row execute function set_updated_at();
+
+alter table holding_notes enable row level security;
+
+drop policy if exists "own holding notes" on holding_notes;
+create policy "own holding notes" on holding_notes
+  for all
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());

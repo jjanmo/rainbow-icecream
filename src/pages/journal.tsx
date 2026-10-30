@@ -46,13 +46,15 @@ import { useAddAxisCategory, useAxisCategories } from '@/hooks/useAxisCategories
 import { useExchangeRate } from '@/hooks/useExchangeRate';
 import { useHistoricalFxRates } from '@/hooks/useHistoricalFxRates';
 import { useDeleteTradeNote, useTradeNotes, useUpsertTradeNote } from '@/hooks/useTradeNotes';
+import { useHoldingNotes, useSaveHoldingNoteSide } from '@/hooks/useHoldingNotes';
 import { useComboboxSearch } from '@/hooks/useComboboxSearch';
 import { returnColor } from '@/lib/calc/rebalance';
 import { OversoldError } from '@/lib/journal/commit';
+import { holdingIdentityKey } from '@/lib/journal/holdingIdentity';
 import { replayHolding, type ClosedLot } from '@/lib/journal/replay';
 import { hasActivity, summarizeExecutions, type TradeSummary } from '@/lib/journal/summary';
 import { fmtUsd, fmtWon } from '@/lib/format';
-import type { Execution, NewExecution, Side, TradeNote } from '@/types/journal';
+import type { Execution, HoldingNoteSide, NewExecution, Side, TradeNote } from '@/types/journal';
 import type { Holding, TradePlan } from '@/types/domain';
 
 /** 로컬 시간대 기준 'YYYY-MM-DD'. 체결은 UTC로 저장되므로 표시 시점에 변환한다. */
@@ -140,14 +142,6 @@ function holdingOptionLabel(h: Holding): string {
   return h.region === '해외' && h.ticker ? `${h.ticker}(${h.name})` : h.name;
 }
 
-/** 종목 모드의 "같은 종목" 판단 기준 — 티커+지역(계좌는 무시). 전량 매도로
- * 삭제된 뒤 다시 산 종목은 holding row가 여러 개로 나뉘어 있어도, 이 키가
- * 같으면 하나의 검색 결과·하나의 이력으로 합쳐 보여준다. 현금성 자산(ticker
- * null)은 이름으로 대신 구분한다. */
-function holdingIdentityKey(h: Holding): string {
-  return h.ticker ? `T:${h.ticker}|${h.region}` : `N:${h.name}|${h.region}`;
-}
-
 /** 그룹 안에서 콤보박스에 보여줄 대표 하나를 고른다 — 활성 상태를 우선하고
  * (지금 쓰는 정확한 이름을 보여주기 위해), 전부 삭제된 상태면 가장 최근 것. */
 function pickRepresentativeHolding(group: Holding[]): Holding {
@@ -159,9 +153,9 @@ interface HoldingComboItem {
   label: string;
 }
 
-/** 한 종목의 체결을 매수/매도로 나눠 시간순으로, 각 체결의 근거와 함께 — 기초잔고(날짜
- * 없음)는 항상 먼저. 근거가 없는 체결도 빼지 않는다(body = '') — 종목 모드 근거 칸에서
- * 그 자리에 바로 새 근거를 쓸 수 있어야 하기 때문이다. */
+/** 한 종목의 날짜별 근거를 매수/매도로 나눠 시간순으로 — 기초잔고(날짜 없음)는 항상 먼저.
+ * 근거가 비어 있는 체결은 뺀다(내용 있는 날짜만 보여달라는 요청) — 날짜와 무관한 생각은
+ * 아래 종목 단위 메모(holding_notes, ADR-0066)에 적는다. */
 function notesForSide(
   executions: Execution[],
   tradeNotes: TradeNote[],
@@ -170,7 +164,10 @@ function notesForSide(
   return executions
     .filter((e) => e.side === side)
     .toSorted((a, b) => (a.executedAt ?? '').localeCompare(b.executedAt ?? ''))
-    .map((e) => ({ execution: e, body: tradeNotes.find((n) => n.executionId === e.id)?.body ?? '' }));
+    .flatMap((e) => {
+      const body = tradeNotes.find((n) => n.executionId === e.id)?.body;
+      return body ? [{ execution: e, body }] : [];
+    });
 }
 
 export default function JournalPage() {
@@ -185,6 +182,8 @@ export default function JournalPage() {
   const updateHolding = useUpdateHolding();
   const upsertTradeNote = useUpsertTradeNote();
   const deleteTradeNote = useDeleteTradeNote();
+  const holdingNotesQuery = useHoldingNotes();
+  const saveHoldingNoteSide = useSaveHoldingNoteSide();
   const roleCategoriesQuery = useAxisCategories('role');
   const sectorCategoriesQuery = useAxisCategories('sector');
   const addAxisCategory = useAddAxisCategory();
@@ -381,6 +380,13 @@ export default function JournalPage() {
     if (!key) return selectedHoldingId ? new Set([selectedHoldingId]) : new Set<string>();
     return new Set((holdingGroupsByKey.get(key) ?? []).map((h) => h.id));
   }, [selectedHoldingId, groupKeyByHoldingId, holdingGroupsByKey]);
+  // 종목 단위 메모(ADR-0066)는 holding 행이 아니라 이 정체성 키에 붙어 있다 — 전량 매도 후
+  // 재매수로 행이 바뀌어도 같은 메모가 이어진다.
+  const selectedIdentityKey = groupKeyByHoldingId.get(selectedHoldingId) ?? null;
+  const selectedHoldingNote = useMemo(
+    () => (holdingNotesQuery.data ?? []).find((n) => n.identityKey === selectedIdentityKey) ?? null,
+    [holdingNotesQuery.data, selectedIdentityKey],
+  );
   const matchingHoldings = useMemo(
     () => allHoldings.filter((h) => matchingHoldingIds.has(h.id)),
     [allHoldings, matchingHoldingIds],
@@ -601,6 +607,18 @@ export default function JournalPage() {
     }
   }
 
+  /** 종목 단위 메모(매수/매도 쪽) 저장 — 날짜별 근거와 별개 테이블(holding_notes). */
+  async function handleSaveHoldingMemo(side: HoldingNoteSide, memo: string) {
+    if (!selectedIdentityKey) return;
+    try {
+      await saveHoldingNoteSide.mutateAsync({ identityKey: selectedIdentityKey, side, memo });
+    } catch (err) {
+      console.error('Failed to save holding memo', err);
+      toast.error('메모 저장에 실패했습니다.');
+      throw err;
+    }
+  }
+
   async function handleDelete(execution: Execution) {
     const holding = holdingById.get(execution.holdingId);
     if (!holding) return;
@@ -717,8 +735,23 @@ export default function JournalPage() {
               <TradePlanCard holdings={matchingHoldings} onSave={handleSaveTradePlan} />
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <NotesColumn title="매수 근거" notes={holdingBuyNotes} onSave={handleSaveNote} />
-                <NotesColumn title="매도 근거" notes={holdingSellNotes} onSave={handleSaveNote} />
+                {/* 종목을 바꾸면 편집 중이던 상태를 버리도록 종목 기준 key를 준다. */}
+                <NotesColumn
+                  key={`${selectedIdentityKey}-buy`}
+                  title="매수 근거"
+                  notes={holdingBuyNotes}
+                  onSave={handleSaveNote}
+                  memo={selectedHoldingNote?.buyMemo ?? null}
+                  onSaveMemo={(memo) => handleSaveHoldingMemo('buyMemo', memo)}
+                />
+                <NotesColumn
+                  key={`${selectedIdentityKey}-sell`}
+                  title="매도 근거"
+                  notes={holdingSellNotes}
+                  onSave={handleSaveNote}
+                  memo={selectedHoldingNote?.sellMemo ?? null}
+                  onSaveMemo={(memo) => handleSaveHoldingMemo('sellMemo', memo)}
+                />
               </div>
             </>
           )}
@@ -854,6 +887,7 @@ export default function JournalPage() {
         holdings={holdings}
         executions={executionsQuery.data ?? []}
         tradeNotes={tradeNotes}
+        holdingNotes={holdingNotesQuery.data ?? []}
         roles={roleCategoriesQuery.data ?? []}
         sectors={sectorCategoriesQuery.data ?? []}
         onCreateSector={handleCreateSector}
@@ -1007,29 +1041,91 @@ function AmountCell({
 }
 
 /** 종목 모드의 "매수 근거"/"매도 근거" 칸 — 매수/매도를 나란히 분리해서 보여달라는
- * 요청대로 두 칸을 각각 이 컴포넌트로 렌더링한다. 체결마다 한 줄이고, 근거가 있든 없든
- * 그 자리에서 쓰고 고칠 수 있다. */
+ * 요청대로 두 칸을 각각 이 컴포넌트로 렌더링한다. 위는 날짜별 근거(체결마다, 내용 있는 것만,
+ * 그 자리에서 고칠 수 있음), 아래는 날짜와 무관한 종목 단위 메모(ADR-0066). */
 function NotesColumn({
   title,
   notes,
   onSave,
+  memo,
+  onSaveMemo,
 }: {
   title: string;
   notes: { execution: Execution; body: string }[];
   onSave: (executionId: string, body: string) => Promise<void>;
+  memo: string | null;
+  onSaveMemo: (memo: string) => Promise<void>;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4 sm:p-5">
-      <div className="mb-3 text-[13px] font-semibold">{title}</div>
-      {notes.length === 0 ? (
-        <p className="text-xs text-muted-foreground">이 구분의 체결이 없습니다.</p>
-      ) : (
-        <div className="flex flex-col gap-2.5">
-          {notes.map(({ execution: e, body }) => (
-            <NoteItem key={e.id} execution={e} body={body} onSave={(next) => onSave(e.id, next)} />
-          ))}
-        </div>
-      )}
+    <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4 sm:p-5">
+      <div>
+        <div className="mb-3 text-[13px] font-semibold">{title}</div>
+        {notes.length === 0 ? (
+          <p className="text-xs text-muted-foreground">날짜별로 기록된 근거가 없습니다.</p>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {notes.map(({ execution: e, body }) => (
+              <NoteItem key={e.id} execution={e} body={body} onSave={(next) => onSave(e.id, next)} />
+            ))}
+          </div>
+        )}
+      </div>
+      <HoldingMemo memo={memo} onSave={onSaveMemo} />
+    </div>
+  );
+}
+
+/** 인라인 편집 상태 공통 — 수정 → 저장/취소. 저장 실패 시 편집 상태를 유지해 입력을 잃지 않는다
+ * (실패 토스트는 onSave 쪽에서 띄운다). */
+function useInlineEdit(initial: string, onSave: (value: string) => Promise<void>) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(initial);
+  const [saving, setSaving] = useState(false);
+
+  function start() {
+    setDraft(initial);
+    setEditing(true);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setEditing(false);
+    } catch {
+      // onSave 쪽에서 토스트를 띄운다.
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return { editing, draft, setDraft, saving, start, save, cancel: () => setEditing(false) };
+}
+
+function InlineEditActions({
+  saving,
+  onCancel,
+  onSave,
+  hint,
+}: {
+  saving: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+  hint?: string | null;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-2">
+      {hint && <span className="mr-auto text-[10px] text-muted-foreground">{hint}</span>}
+      <button
+        type="button"
+        onClick={onCancel}
+        className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+      >
+        취소
+      </button>
+      <Button type="button" size="sm" className="h-6 text-[11px]" onClick={onSave} disabled={saving}>
+        {saving ? '저장 중...' : '저장'}
+      </Button>
     </div>
   );
 }
@@ -1043,65 +1139,73 @@ function NoteItem({
   body: string;
   onSave: (body: string) => Promise<void>;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(body);
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave() {
-    // 원래 비어 있던 근거를 빈 채로 저장하면 할 일이 없다 — 지울 행도 없다.
-    if (!body && !draft.trim()) {
-      setEditing(false);
-      return;
-    }
-    setSaving(true);
-    try {
-      await onSave(draft);
-      setEditing(false);
-    } catch {
-      // 실패 토스트는 onSave 쪽에서 띄운다 — 편집 상태를 유지해 입력한 내용을 잃지 않게 한다.
-    } finally {
-      setSaving(false);
-    }
-  }
+  const edit = useInlineEdit(body, onSave);
 
   return (
     <div className="border-t border-border pt-2.5 text-xs first:border-t-0 first:pt-0">
       <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
         <span>{e.executedAt ? localDayKey(e.executedAt) : '기초잔고'}</span>
-        {!editing && (
-          <button
-            type="button"
-            onClick={() => {
-              setDraft(body);
-              setEditing(true);
-            }}
-            className="text-[11px] underline-offset-2 hover:underline"
-          >
+        {!edit.editing && (
+          <button type="button" onClick={edit.start} className="text-[11px] underline-offset-2 hover:underline">
             수정
           </button>
         )}
       </div>
-      {editing ? (
+      {edit.editing ? (
         <div className="flex flex-col gap-2">
-          <Textarea value={draft} onChange={(ev) => setDraft(ev.target.value)} rows={3} className="max-h-40 resize-none text-xs" />
-          <div className="flex items-center justify-end gap-2">
-            {body && !draft.trim() && <span className="mr-auto text-[10px] text-muted-foreground">비워서 저장하면 근거가 삭제됩니다.</span>}
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
-            >
-              취소
-            </button>
-            <Button type="button" size="sm" className="h-6 text-[11px]" onClick={() => void handleSave()} disabled={saving}>
-              {saving ? '저장 중...' : '저장'}
-            </Button>
-          </div>
+          <Textarea
+            value={edit.draft}
+            onChange={(ev) => edit.setDraft(ev.target.value)}
+            rows={3}
+            className="max-h-40 resize-none text-xs"
+          />
+          <InlineEditActions
+            saving={edit.saving}
+            onCancel={edit.cancel}
+            onSave={() => void edit.save()}
+            hint={!edit.draft.trim() ? '비워서 저장하면 근거가 삭제됩니다.' : null}
+          />
         </div>
-      ) : body ? (
-        <p className="whitespace-pre-wrap">{body}</p>
       ) : (
-        <p className="text-muted-foreground">기록된 근거가 없습니다.</p>
+        <p className="whitespace-pre-wrap">{body}</p>
+      )}
+    </div>
+  );
+}
+
+/** 날짜·매매와 상관없이 이 종목에 대한 생각·포인트를 적는 칸(ADR-0066) — 매수 칸·매도 칸에
+ * 하나씩. 날짜별 근거 아래에 항상 보인다. */
+function HoldingMemo({ memo, onSave }: { memo: string | null; onSave: (memo: string) => Promise<void> }) {
+  const edit = useInlineEdit(memo ?? '', onSave);
+
+  return (
+    <div className="border-t border-dashed border-border pt-3 text-xs">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold text-muted-foreground">내 생각 · 종목 포인트</span>
+        {!edit.editing && (
+          <button
+            type="button"
+            onClick={edit.start}
+            className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+          >
+            {memo ? '수정' : '작성'}
+          </button>
+        )}
+      </div>
+      {edit.editing ? (
+        <div className="flex flex-col gap-2">
+          <Textarea
+            value={edit.draft}
+            onChange={(ev) => edit.setDraft(ev.target.value)}
+            rows={5}
+            className="max-h-80 resize-y text-xs"
+          />
+          <InlineEditActions saving={edit.saving} onCancel={edit.cancel} onSave={() => void edit.save()} />
+        </div>
+      ) : memo ? (
+        <p className="whitespace-pre-wrap">{memo}</p>
+      ) : (
+        <p className="text-muted-foreground">아직 적은 메모가 없습니다.</p>
       )}
     </div>
   );

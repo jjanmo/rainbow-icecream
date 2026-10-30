@@ -51,3 +51,17 @@ export interface TradeNote {
 }
 
 export type NewTradeNote = Omit<TradeNote, "id" | "userId" | "createdAt">;
+
+/** 종목 단위 메모(ADR-0066) — 날짜별 근거(TradeNote, 체결마다)와 별개로, 날짜·매매와 상관없이
+ * 종목에 대한 생각·포인트를 매수/매도 쪽으로 나눠 적는다. holding 행이 아니라 identityKey
+ * (holdingIdentityKey, 티커+지역)에 붙어서 전량 매도 후 재매수해도 이어진다. 집계에 쓰지 않는다. */
+export interface HoldingNote {
+  id: string;
+  userId: string;
+  identityKey: string;
+  buyMemo: string | null;
+  sellMemo: string | null;
+  updatedAt: string;
+}
+
+export type HoldingNoteSide = "buyMemo" | "sellMemo";

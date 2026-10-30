@@ -71,6 +71,7 @@
 | [0063](./0063-unify-role-sector-axis-categories.md) | 역할·섹터를 axis_categories 테이블로 통합, 역할도 동적 목록으로 | Accepted |
 | [0064](./0064-holding-trade-plan.md) | 종목별 매매 계획(정찰병·최대매수/분할·손절라인)과 보유 종목 행 색상 신호 | Accepted |
 | [0065](./0065-52-week-high-drawdown.md) | 52주 고점 대비 하락률 — 일별 DB 캐시 + 실시간 현재가 | Accepted |
+| [0066](./0066-holding-notes.md) | 종목 단위 메모(holding_notes) — 날짜별 근거와 나란히 | Accepted |
 
 ## 새 ADR 작성 형식
 

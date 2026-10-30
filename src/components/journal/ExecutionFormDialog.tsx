@@ -38,7 +38,8 @@ import {
   type Region,
   type TradePlan,
 } from '@/types/domain';
-import type { Execution, NewExecution, NewTradeNote, Side, TradeNote } from '@/types/journal';
+import { holdingIdentityKey } from '@/lib/journal/holdingIdentity';
+import type { Execution, HoldingNote, NewExecution, NewTradeNote, Side, TradeNote } from '@/types/journal';
 
 const EXPOSURE_ITEMS = [
   { label: '한국', value: '한국' },
@@ -145,6 +146,7 @@ export function ExecutionFormDialog({
   holdings,
   executions,
   tradeNotes,
+  holdingNotes,
   roles,
   sectors,
   onCreateSector,
@@ -161,6 +163,8 @@ export function ExecutionFormDialog({
   executions: Execution[];
   /** 수정 모드에서 이 체결에 이미 달린 근거를 불러오기 위해 필요하다. */
   tradeNotes: TradeNote[];
+  /** 종목 단위 메모(ADR-0066) — 매도할 때 그 종목의 매수 쪽 메모를 매수 메모 이력과 함께 보여준다. */
+  holdingNotes: HoldingNote[];
   /** 역할 칩 목록(ADR-0063) — 유저가 "역할 관리"에서 추가/삭제하는 동적 목록. */
   roles: AxisCategory[];
   /** 섹터 콤보박스 목록 (ADR-0062/0063). */
@@ -327,6 +331,10 @@ export function ExecutionFormDialog({
   // 클릭/Enter로 엉뚱한 종목이 골라지는 버그가 있었다 — 검색어를 직접 추적해 우회한다.
   const holdingSearch = useComboboxSearch(holdingComboItems, (item) => item.label);
   const buyHistory = selected ? buyNotesFor(selected.id) : [];
+  // 종목 단위 매수 메모는 holding 행이 아니라 티커+지역 키에 붙어 있다(전량 매도 후 재매수해도 이어짐).
+  const selectedBuyMemo = selected
+    ? (holdingNotes.find((n) => n.identityKey === holdingIdentityKey(selected))?.buyMemo ?? null)
+    : null;
 
   function prefillNoteIfEmpty(id: string) {
     if (noteBody.trim()) return;
@@ -777,7 +785,13 @@ export function ExecutionFormDialog({
 
           {/* 그 종목을 살 때마다 남긴 메모 — "감정적 이탈"을 스스로 기록하게 만드는 장치. */}
           {side === 'SELL' && selected && (
-            <div className="rounded-lg border border-dashed border-border p-2.5 text-xs">
+            <div className="flex flex-col gap-2.5 rounded-lg border border-dashed border-border p-2.5 text-xs">
+              {selectedBuyMemo && (
+                <div className="flex flex-col gap-1">
+                  <div className="font-semibold text-muted-foreground">내 생각 · 종목 포인트 (매수)</div>
+                  <p className="whitespace-pre-wrap">{selectedBuyMemo}</p>
+                </div>
+              )}
               {buyHistory.length > 0 ? (
                 <div className="flex flex-col gap-1.5">
                   <div className="font-semibold text-muted-foreground">매수 메모 이력</div>
