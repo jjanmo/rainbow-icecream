@@ -182,7 +182,31 @@ export function fmtMaxBuyPlan(
  * - 적립식(DCA): 1줄 "매월 25일 50만원" / "매주 월 2주" / "매일 1만원" (일정을 안 정했으면 "적립식")
  * 최대 금액 미정·계획 없음·최대 금액 미입력은 null(빈 칸). 손절라인은 행 색상이 이미 보여주므로
  * 넣지 않는다. 매입금액은 표 매입금액 열과 같은 원화 환산값(costKrwOf)을 받는다. */
-export type BuyPlanCell = { kind: "CAP"; scout: string | null; max: string } | { kind: "DCA"; text: string };
+/** 최대 금액을 이만큼까지 넘긴 건 "완료"로 본다 — 분할 매수 마지막 회차가 딱 맞게 떨어지지 않는
+ * 게 보통이라, 조금 넘친 것까지 초과로 표시하면 거의 모든 홀드 종목이 초과로 보인다. */
+export const MAX_BUY_OVER_TOLERANCE_WON = 200_000;
+
+/** 매매 계획 열 한 줄의 괄호 안 상태. 부족은 모자란 금액, 초과는 넘친 금액 — 둘 다 양수로 쓰고 방향은 색으로만 구분한다. */
+export type PlanLineStatus = { kind: "SHORT"; text: string } | { kind: "DONE" } | { kind: "OVER"; text: string };
+
+export interface PlanLine {
+  amount: string;
+  status: PlanLineStatus;
+}
+
+/** 부족 = 빨강, 초과 = 파랑 — 앱 전역의 플러스 빨강/마이너스 파랑(ADR-0026)과 같은 쌍이다
+ * (남은 금액 = 금액 − 매입금액의 부호 기준). */
+export const PLAN_LINE_STATUS_COLOR: Record<"SHORT" | "OVER", string> = {
+  SHORT: "var(--diff-rise)",
+  OVER: "var(--diff-fall)",
+};
+
+/** 화면에 보이는 그대로의 한 줄 — 두 줄 글자 크기를 맞출 때 쓴다. */
+export function planLineText(line: PlanLine): string {
+  return `${line.amount}(${line.status.kind === "DONE" ? "완료" : line.status.text})`;
+}
+
+export type BuyPlanCell = { kind: "CAP"; scout: PlanLine | null; max: PlanLine } | { kind: "DCA"; text: string };
 
 export function buyPlanCell(
   holding: Pick<
@@ -193,14 +217,28 @@ export function buyPlanCell(
 ): BuyPlanCell | null {
   if (holding.isDca) return { kind: "DCA", text: fmtDcaSchedule(holding, { unitWon: true }) ?? "적립식" };
   if (holding.maxUndecided || holding.maxBuyAmount == null) return null;
-  // 남은 한도는 원 단위 원가에서 나온 값이라 만원 소수가 길어지므로 소수 1자리까지만.
-  // 반올림하면 0이 되는 작은 음수는 "-0"으로 보이지 않게 0으로 맞춘다.
-  const raw = (holding.maxBuyAmount - costKrw) / 10000;
-  const remaining = Math.abs(raw) < 0.05 ? 0 : raw;
-  const remainingText = remaining.toLocaleString("ko-KR", { maximumFractionDigits: 1 });
   return {
     kind: "CAP",
-    scout: holding.scoutAmount != null ? `${fmtPlanAmount(holding.scoutAmount)}원` : null,
-    max: `${fmtPlanAmount(holding.maxBuyAmount)}원(${remainingText}만원)`,
+    // 정찰병은 넘쳐도 다음 단계(추매)로 넘어간 것일 뿐이라 초과 표시 없이 완료다.
+    scout: holding.scoutAmount != null ? planLine(holding.scoutAmount, costKrw, Infinity) : null,
+    max: planLine(holding.maxBuyAmount, costKrw, MAX_BUY_OVER_TOLERANCE_WON),
   };
+}
+
+/** 매입금액이 금액에 못 미치면 부족(남은 금액), 금액 이상 ~ 금액 + 허용치까지는 완료, 그 위는 초과.
+ * 완료 하한은 홀드 칩의 "원가 ≥ 최대 금액" 경계와 같다. */
+function planLine(amount: number, costKrw: number, overTolerance: number): PlanLine {
+  const remaining = amount - costKrw;
+  const status: PlanLineStatus =
+    remaining > 0
+      ? { kind: "SHORT", text: fmtRemaining(remaining) }
+      : -remaining > overTolerance
+        ? { kind: "OVER", text: fmtRemaining(-remaining) }
+        : { kind: "DONE" };
+  return { amount: `${fmtPlanAmount(amount)}원`, status };
+}
+
+/** 원 단위 원가에서 나온 값이라 만원 소수가 길어지므로 소수 1자리까지만. */
+function fmtRemaining(won: number): string {
+  return `${(won / 10000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만원`;
 }

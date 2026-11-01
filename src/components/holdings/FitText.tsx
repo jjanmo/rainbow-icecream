@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 // Character-count heuristic rather than real measurement — this table
@@ -17,13 +17,14 @@ export function FitText({
   style,
   sizeBy,
 }: {
-  children: string;
+  children: ReactNode;
   className?: string;
   style?: CSSProperties;
-  /** 글자 크기를 정할 기준 문자열 — 여러 줄을 같은 크기로 맞출 때 가장 긴 줄을 넘긴다. */
+  /** 글자 크기를 정할 기준 문자열 — 여러 줄을 같은 크기로 맞출 때 가장 긴 줄을 넘긴다.
+   * children이 문자열이 아니면(부분 색칠 등) 반드시 넘긴다. */
   sizeBy?: string;
 }) {
-  const basis = sizeBy ?? children;
+  const basis = sizeBy ?? (typeof children === "string" ? children : "");
   const step = STEPS.find((s) => basis.length <= s.max) ?? STEPS[STEPS.length - 1];
   return (
     <span className={cn("block truncate", step.size, className)} style={style}>

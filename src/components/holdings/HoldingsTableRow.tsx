@@ -3,7 +3,14 @@ import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
 import type { Drawdown52w } from "@/lib/calc/high52w";
 import { costKrwOf, diffColor, returnColor, type HoldingCalc } from "@/lib/calc/rebalance";
-import { buyPlanCell, TRADE_PLAN_SIGNAL_BG, tradePlanSignalOf } from "@/lib/calc/tradePlan";
+import {
+  buyPlanCell,
+  PLAN_LINE_STATUS_COLOR,
+  planLineText,
+  TRADE_PLAN_SIGNAL_BG,
+  tradePlanSignalOf,
+  type PlanLine,
+} from "@/lib/calc/tradePlan";
 import { fmtQty, fmtSigned, fmtUsd, fmtWon } from "@/lib/format";
 import { FitText } from "./FitText";
 
@@ -31,6 +38,8 @@ export function HoldingsTableRow({
   // 손절 신호만 행을 칠한다 — 정찰병 미달은 색 없음(TRADE_PLAN_SIGNAL_BG 참고).
   const rowBg = signal ? TRADE_PLAN_SIGNAL_BG[signal] : undefined;
   const plan = buyPlanCell(holding, costKrw);
+  const planTexts = plan?.kind === "CAP" ? [plan.scout, plan.max].flatMap((l) => (l ? [planLineText(l)] : [])) : [];
+  const planSizeBy = planTexts.reduce((a, b) => (b.length > a.length ? b : a), "");
 
   return (
     <TableRow style={rowBg ? { backgroundColor: rowBg } : undefined}>
@@ -94,11 +103,13 @@ export function HoldingsTableRow({
             시작점을 맞추기 위해서다. */}
         {plan?.kind === "CAP" ? (
           <div className="inline-block max-w-full text-left align-top">
-            {/* 두 줄 글자 크기를 긴 줄(최대 금액) 기준으로 맞춘다. */}
-            <FitText className={plan.scout ? "font-mono" : "text-muted-foreground"} sizeBy={plan.max}>
-              {plan.scout ?? "-"}
+            {/* 두 줄 글자 크기를 더 긴 줄 기준으로 맞춘다. */}
+            <FitText className={plan.scout ? "font-mono" : "text-muted-foreground"} sizeBy={planSizeBy}>
+              {plan.scout ? <PlanLineText line={plan.scout} /> : "-"}
             </FitText>
-            <FitText className="font-mono">{plan.max}</FitText>
+            <FitText className="font-mono" sizeBy={planSizeBy}>
+              <PlanLineText line={plan.max} />
+            </FitText>
           </div>
         ) : (
           <FitText className={plan ? "font-mono" : "text-muted-foreground"}>{plan?.text ?? "-"}</FitText>
@@ -115,5 +126,21 @@ export function HoldingsTableRow({
         </div>
       </TableCell>
     </TableRow>
+  );
+}
+
+/** "200만원(180만원)" — 괄호 안만 부족(빨강)/초과(파랑)로 칠한다. 완료는 색 없음. */
+function PlanLineText({ line }: { line: PlanLine }) {
+  const { status } = line;
+  return (
+    <>
+      {line.amount}(
+      {status.kind === "DONE" ? (
+        "완료"
+      ) : (
+        <span style={{ color: PLAN_LINE_STATUS_COLOR[status.kind] }}>{status.text}</span>
+      )}
+      )
+    </>
   );
 }
