@@ -926,3 +926,43 @@ alter table holdings drop column if exists target_pct_in_group;
 alter table holdings drop column if exists sort_order;
 drop table if exists asset_groups_deprecated;
 
+-- ---------------------------------------------------------------------------
+-- Migration: RLS 정책의 auth.uid()를 (select auth.uid())로 감싼다 (Supabase 성능 권고
+-- auth_rls_initplan). 그냥 auth.uid()는 행마다 다시 호출되지만, 서브쿼리로 감싸면
+-- 쿼리당 한 번만 계산(initplan)하고 재사용한다. 접근 규칙 자체는 그대로다 — alter
+-- policy라 cmd/역할도 안 바뀐다. 위쪽 블록들의 create policy는 옛 형태로 남아 있지만
+-- 이 파일을 위에서부터 다시 돌리면 여기서 최종 형태로 덮인다. 새 정책은 처음부터
+-- (select auth.uid())로 쓸 것. Idempotent.
+-- 같은 권고(unindexed_foreign_keys)로 trade_notes.user_id 인덱스도 추가한다.
+-- ---------------------------------------------------------------------------
+alter policy "own holdings" on holdings
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+alter policy "own executions" on executions
+  using (user_id = (select auth.uid()))
+  with check (
+    user_id = (select auth.uid())
+    and holding_id in (select id from holdings where user_id = (select auth.uid()))
+  );
+alter policy "own trade notes" on trade_notes
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+alter policy "own axis targets" on axis_targets
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+alter policy "own axis categories" on axis_categories
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+alter policy "own holding notes" on holding_notes
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+alter policy "authenticated read fx rates" on fx_rate_daily
+  using ((select auth.uid()) is not null);
+alter policy "authenticated write fx rates" on fx_rate_daily
+  with check ((select auth.uid()) is not null);
+alter policy "authenticated read price highs" on price_high_52w
+  using ((select auth.uid()) is not null);
+alter policy "authenticated write price highs" on price_high_52w
+  with check ((select auth.uid()) is not null);
+
+create index if not exists trade_notes_user_idx on trade_notes (user_id);
