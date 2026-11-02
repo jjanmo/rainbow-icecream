@@ -705,7 +705,7 @@ end $$;
 
 -- 참고: asset_groups_deprecated / holdings.group_id / holdings.sort_order /
 -- holdings.target_pct_in_group은 이번 마이그레이션과 무관한 더 오래된 기술부채라
--- 여기서 같이 정리하지 않는다 — 역할/섹터 구현 완료 후 별도 후속 작업.
+-- 여기서 같이 정리하지 않는다 — 맨 아래 "옛 자산군 구조 제거" 마이그레이션에서 지웠다.
 
 -- ---------------------------------------------------------------------------
 -- Migration: 역할·섹터를 하나의 테이블로 통합 (ADR-0063, ADR-0062를 일부 대체).
@@ -912,3 +912,17 @@ create policy "own holding notes" on holding_notes
   for all
   using (user_id = auth.uid())
   with check (user_id = auth.uid());
+
+-- ---------------------------------------------------------------------------
+-- Migration: 옛 자산군 구조 제거 (ADR-0062 이후 미사용, 위 ADR-0063 블록의 "참고" 후속).
+-- 앱은 역할·섹터(axis_categories)로 옮긴 뒤 이 컬럼·테이블을 읽지도 쓰지도 않는다.
+-- group_id FK가 asset_groups_deprecated를 가리키므로 컬럼을 먼저 지운다. Idempotent.
+-- (같은 때 이 DB를 빌려 쓰던 다른 프로젝트의 themes/subtopics/schedules/board_columns
+-- 테이블도 지웠다 — 이 파일에서 만든 적이 없어서 여기 DDL은 없다.)
+-- ---------------------------------------------------------------------------
+drop index if exists holdings_user_group_idx;
+alter table holdings drop column if exists group_id;
+alter table holdings drop column if exists target_pct_in_group;
+alter table holdings drop column if exists sort_order;
+drop table if exists asset_groups_deprecated;
+

@@ -115,4 +115,5 @@ App code lives under `src/` (`src/pages`, `src/components`, `src/hooks`, `src/li
 - Before considering any change done, run `pnpm typecheck && pnpm lint && pnpm build` — all three must pass clean.
 
 ## Security
+- This Supabase project is used by this app only — the tables another project had borrowed (`themes`/`subtopics`/`schedules`/`board_columns`) were dropped along with the legacy `asset_groups_deprecated` + `holdings.group_id`/`target_pct_in_group`/`sort_order`.
 - Never print secrets (tokens, `.env` values) in tool output. When redacting config/secret-adjacent data, redact recursively — including array elements, not just dict values (a past redaction script missed array-nested strings and leaked a live Supabase PAT).
